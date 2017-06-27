@@ -3116,7 +3116,7 @@ tobii_wearable_data_subscribe()
 
 
 
-tobii_get_lens_congfiguration
+tobii_get_lens_configuration
 ----------------------------
 
 ### Function
