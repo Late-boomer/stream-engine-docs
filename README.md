@@ -42,6 +42,37 @@
 
 Stream Engine change log below:
 
+What's new in version 2.0.2:
+
+	* tobii_device_create no longer supports null URL as input parameter, this will result in a TOBII_ERROR_INVALID_PARAMETER return code.
+	* Ability to enumerate IS1 devices has been removed.
+	* Default enumeration using tobii_enumerate_local_device_urls no longer includes IS2.
+	* Disable emulated presence for all trackers that do not support a native presence stream, except for IS3.
+	* tobii_process_callbacks has been split into two separate functions:
+		* tobii_device_process_callbacks, which has the same arguments and functionality as that of the old function.
+		* tobii_engine_process_callbacks, which processes the callbacks from the new tobii_engine_t connection type.
+	* tobii_wait_for_callbacks now takes more arguments both a tobii_engine_t instance and multiple tobii_device_t instances.
+	* tobii_reconnect has been split into two separate functions:
+		* tobii_device_reconnect, which has the same arguments and functionality as that of the old function.
+		* tobii_engine_reconnect, which reconnects the new tobii_engine_t connection type.
+	* New tobii_engine_t connection type that enables direct communication with the Tobii Service, can be found in new header file tobii_engine.h. Features include:
+		* Utility functions, very similar to the tobii_device_t functions; create, destroy, reconnect, process_callbacks and clear_callback_buffers.
+		* Ability to query connected devices via the tobii_enumerate_devices function.
+		* Subscription to changes in connected devices via the new tobii_device_list_change_subscription.
+	* New error return codes have been added to the Api:
+		* TOBII_ERROR_CALLBACK_IN_PROGRESS, returned from functions who are called from within a callback context.
+		* TOBII_ERROR_CONFLICTING_API_INSTANCES, returned from wait_for_callbacks if engine and device instance was created using different api instances.
+		* TOBII_ERROR_CALIBRATION_BUSY, returned from tobii_calibration_start tobii_calibration_apply when another client is already calibrating.
+	* New notifications available:
+		* TOBII_NOTIFICATION_TYPE_CALIBRATION_ENABLED_EYE_CHANGED, sent when the enabled eye has changed.
+		* TOBII_NOTIFICATION_TYPE_CALIBRATION_ID_CHANGED, sent when a new calibration has been set.
+	* New states available for query through the tobii_get_state_* functions
+		* TOBII_STATE_CALIBRATION_ID, queries the calibration ID/Hash of the active calibration, 0 if no calibration is set.
+		* TOBII_STATE_CALIBRATION_ACTIVE, queries if the tracker is in calibration state.
+	* New calibration id concept, where the client can query and receive notification on the calibration id, which is a unique identifier of the calibration blob.
+	* Fixed behavior of tobii_device_clear_callback_buffers.
+
+
 What's new in version 1.1.1:
 
 	* Fix for possible command mutex starvation, where a command can be delayed for long periods of time during certain conditions.

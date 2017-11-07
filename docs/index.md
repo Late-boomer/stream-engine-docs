@@ -4,8 +4,9 @@
 The Tobii Stream Engine API consists of the following modules.
 
 - [tobii](index.md#tobiih) - Core functions.
-- [tobii_streams](index.md#tobii_streamsh)  - Basic gaze- and data streams.
-- [tobii_wearable](index.md#tobii_wearableh)  - Gaze data streams for wearable/vr devices.
+- [tobii_streams](index.md#tobii_streamsh) - Basic gaze- and data streams.
+- [tobii_wearable](index.md#tobii_wearableh) - Gaze data streams for wearable/vr devices.
+- [tobii_engine](index.md#tobii_engineh)  - Communication with the Tobii Engine service
 
 
 
@@ -25,6 +26,9 @@ that are supplied together with the stream engine library.
 
 The Tobii Stream Engine API implements full thread safety across all API functions. However, it is up to the user to guarantee
 thread safety in code injected into Stream Engine, for example inside callbacks or if a custom memory allocator is supplied.
+It is not allowed to call Stream Engine API functions from within a callback invoked by stream engine. Attempting to do so 
+will result in TOBII_ERROR_CALLBACK_IN_PROGRESS. A specific exception to this is tobii_system_clock() which specifically *is*
+allowed to be called even from within a callback function.
 
 In the *samples* folder, you can find complete examples on how to use Stream Engine with multiple threads, such as
 *background_thread_sample* and *game_loop_sample*.
@@ -356,6 +360,13 @@ the following:
     Some unexpected internal error occurred. This error should normally not be returned, so if it is, please contact
     the support.
 
+-   **TOBII_ERROR_CALLBACK_IN_PROGRESS**
+
+    The function failed because it was called from within a callback triggered from an API call such as
+    tobii_device_process_callbacks(), tobii_calibration_retrieve(), tobii_enumerate_illumination_modes(),
+    or tobii_license_key_retrieve().
+    Calling tobii_api_destroy from within a callback function is not supported.
+
 
 ### See also
 
@@ -385,8 +396,8 @@ Retrieves the URLs for stream engine compatible devices currently connected to t
 ### Remarks
 
 A system might have multiple devices connected, which the stream engine is able to communicate with.
-tobii_enumerate_local_device_urls iterates over all such devices found. It will only enumerate devices connected
-directly to the system, not devices connected on the network.
+tobii_enumerate_local_device_urls iterates over all such (excluding IS1 and IS2) devices found.
+It will only enumerate devices connected directly to the system, not devices connected on the network.
 
 *api* must be a pointer to a valid tobii_api_t instance as created by calling tobii_api_create.
 
@@ -591,8 +602,7 @@ more information.
 
 *api* must be a pointer to a valid tobii_api_t as created by calling tobii_api_create.
 
-*url* is optional, so can either be NULL (in which case the first device that can be found will be used) or a valid
-device url as returned by tobii_enumerate_local_device_urls.
+*url* must be a valid device url as returned by tobii_enumerate_local_device_urls.
 
 *device* must be a pointer to a variable of the type `tobii_device_t*` that is, a pointer to a 
 tobii_device_t-pointer. This variable will be filled in with a pointer to the created device instance. 
@@ -608,22 +618,25 @@ tobii_device_create returns one of the following:
 
     The *api* or *device* parameters were passed in as NULL, or the url string is not a valid device url (or NULL).
 
--   **TOBII_ERROR_NOT_AVAILABLE**
-
-    The *url* parameter was passed as NULL, to use the first device found, but no device could be found.
-
 -   **TOBII_ERROR_ALLOCATION_FAILED**
 
     The internal call to malloc or to the custom memory allocator (if used) returned NULL, so device creation failed.
 
--   **TOBII_ERROR_CONNECTION_FAILED**, **TOBII_ERROR_FIRMWARE_NO_RESPONSE**
+-   **TOBII_ERROR_CONNECTION_FAILED**
 
-    The connection to the tracker failed.
+    The connection to the device was lost. Call tobii_device_reconnect() to re-establish connection.
 
--   **TOBII_ERROR_INTERNAL**, **TOBII_ERROR_NOT_SUPPORTED**, **TOBII_ERROR_OPERATION_FAILED**
+-   **TOBII_ERROR_INTERNAL**
 
     Some unexpected internal error occurred. This error should normally not be returned, so if it is, please contact
     the support.
+
+-   **TOBII_ERROR_CALLBACK_IN_PROGRESS**
+
+    The function failed because it was called from within a callback triggered from an API call such as 
+    tobii_device_process_callbacks(), tobii_calibration_retrieve(), tobii_enumerate_illumination_modes(), 
+    or tobii_license_key_retrieve().
+    Calling tobii_device_create from within a callback function is not supported.
 
 
 ### See also
@@ -639,14 +652,27 @@ tobii_get_feature_group()
     #include <stdio.h>
     #include <assert.h>
 
+    static void url_receiver( char const* url, void* user_data )
+    {
+        char* buffer = (char*)user_data;
+        if( *buffer != '\0' ) return; // only keep first value
+
+        if( strlen( url ) < 256 )
+            strcpy( buffer, url );
+    }
+
     int main()
     {
         tobii_api_t* api;
         tobii_error_t error = tobii_api_create( &api, NULL, NULL );
         assert( error == TOBII_ERROR_NO_ERROR );
 
+        char url[ 256 ] = { 0 };
+        error = tobii_enumerate_local_device_urls( api, url_receiver, url );
+        assert( error == TOBII_ERROR_NO_ERROR && *url != '\0' );
+
         tobii_device_t* device;
-        error = tobii_device_create( api, NULL, &device );
+        error = tobii_device_create( api, url, &device );
         assert( error == TOBII_ERROR_NO_ERROR );
 
         // --> code to use the device would go here <--
@@ -667,7 +693,7 @@ tobii_device_destroy
 
 ### Function
 
-Destroy a device previously created through a call to tobii_device_destroy.
+Destroy a device previously created through a call to tobii_device_create.
 
 
 ### Syntax
@@ -682,7 +708,7 @@ tobii_device_destroy will disconnect from the device, perform cleanup and free t
 tobii_device_create.
 
 **NOTE:** Make sure that no background thread is using the device, for example in the thread calling 
-tobii_process_callbacks, before calling tobii_device_destroy in order to avoid the risk of encountering undefined 
+tobii_device_process_callbacks, before calling tobii_device_destroy in order to avoid the risk of encountering undefined 
 behavior.
 
 *device* must be a pointer to a valid tobii_device_t instance as created by calling tobii_device_create or 
@@ -691,7 +717,7 @@ tobii_device_create_ex.
 
 ### Return value
 
-If the device is successfully created, tobii_device_create returns **TOBII_ERROR_NO_ERROR**. If the call fails,
+If the device is successfully destroyed, tobii_device_create returns **TOBII_ERROR_NO_ERROR**. If the call fails,
 tobii_device_create returns one of the following:
 
 -   **TOBII_ERROR_INVALID_PARAMETER**
@@ -702,6 +728,13 @@ tobii_device_create returns one of the following:
 
     Some unexpected internal error occurred. This error should normally not be returned, so if it is, please contact
     the support.
+
+-   **TOBII_ERROR_CALLBACK_IN_PROGRESS**
+
+    The function failed because it was called from within a callback triggered from an API call such as 
+    tobii_device_process_callbacks(), tobii_calibration_retrieve(), tobii_enumerate_illumination_modes(), 
+    or tobii_license_key_retrieve().
+    Calling tobii_device_destroy from within a callback function is not supported.
 
 
 ### See also
@@ -726,16 +759,21 @@ Puts the calling thread to sleep until there are new callbacks available to proc
 ### Syntax
 
     #include <tobii/tobii.h>
-    tobii_error_t tobii_wait_for_callbacks( tobii_device_t* device );
+    tobii_error_t tobii_wait_for_callbacks( tobii_engine_t* engine, 
+        int device_count, tobii_device_t* const* devices )
 
 
 ### Remarks
 
-Stream engine does not use any threads to do processing or receive data. Instead, the function tobii_process_callbacks() 
-have to be called regularly, to receive data from the device and process it. The typical use case is to implement your 
-own thread to call tobii_process_callbacks from, and to avoid busy-waiting for data to become available, 
-tobii_wait_for_callbacks can be called before each call to tobii_process_callbacks. It will sleep the calling thread 
-until new data is available to process, after which tobii_process_callbacks should be called to process it.
+Stream engine does not use any threads to do processing or receive data. Instead, the functions
+tobii_device_process_callbacks() and tobii_device_process_callbacks() have to be called regularly, to receive data 
+from the device and from Tobii Engine, and process it. 
+
+The typical use case is to implement your own thread to call tobii_device_process_callbacks and 
+tobii_engine_process_callbacks from, and to avoid busy-waiting for data to become available, tobii_wait_for_callbacks 
+can be called before each call to tobii_device_process_callbacks and tobii_engine_process_callbacks. It will sleep the 
+calling thread until new data is available to process, after which tobii_device_process_callbacks and 
+tobii_engine_process_callbacks should be called to process it.
 
 In addition to waiting for data, tobii_wait_for_callbacks will also periodically call tobii_update_timesync() to ensure 
 synchronization of system and device timestamps. This means you will not have to call tobii_update_timesync() if you 
@@ -746,8 +784,14 @@ tobii_wait_for_callbacks will return **TOBII_ERROR_TIMED_OUT**. This does not in
 opportunity for the calling thread to perform its own internal housekeeping (like checking for exit conditions and the 
 like). It is valid to immediately call tobii_wait_for_callbacks again to resume waiting.
 
-*device* must be a pointer to a valid tobii_device_t instance as created by calling tobii_device_create or 
-tobii_device_create_ex.
+*engine* is a pointer to a valid tobii_engine_t instance as created by calling tobii_engine_create. It can be passed in
+as NULL if there is no tobii_engine_t instance.
+
+*device_count* must be the number of devices in the array passed in the *devices* parameter.
+
+*devices* should be an array of pointers to valid tobii_device_t instances as created by calling tobii_device_create or 
+tobii_device_create_ex. It can be NULL if there are no tobii_device_t instances to process. In this case, *device_count*
+must be 0.
 
 
 ### Return value
@@ -758,15 +802,18 @@ or if the wait times out, tobii_wait_for_callbacks returns one of the following:
 -   **TOBII_ERROR_TIMED_OUT**
 
     This does not indicate a failure. A timeout happened before any data was received. Call tobii_wait_for_callbacks() 
-    again (it is not necessary to call tobii_process_callbacks(), as it doesn't have any new data to process).
+    again (it is not necessary to call tobii_device_process_callbacks() or tobii_engine_process_callbacks(), as it 
+    doesn't have any new data to process).
 
 -   **TOBII_ERROR_INVALID_PARAMETER**
 
-    The *device* parameter was passed in as NULL. 
+    No valid device or engine instance was provided. At least one valid pointer to a device or engine instance must be
+    provided. 
 
--   **TOBII_ERROR_CONNECTION_FAILED**
+-   **TOBII_ERROR_CONFLICTING_API_INSTANCES** 
 
-    The connection to the device was lost. Call tobii_reconnect() to re-establish connection.
+    Every instance of device or engine passed in must be created with the same instance of tobii_api_t. If different
+    api instances where used, this error will be returned.
 
 -   **TOBII_ERROR_INTERNAL**
 
@@ -776,7 +823,7 @@ or if the wait times out, tobii_wait_for_callbacks returns one of the following:
 
 ### See also
 
-tobii_process_callbacks(), tobii_clear_callback_buffers()
+tobii_device_process_callbacks(), tobii_engine_process_callbacks(),
 
 
 ### Example
@@ -786,23 +833,36 @@ tobii_process_callbacks(), tobii_clear_callback_buffers()
     #include <stdio.h>
     #include <assert.h>
 
+    static void url_receiver( char const* url, void* user_data )
+    {
+        char* buffer = (char*)user_data;
+        if( *buffer != '\0' ) return; // only keep first value
+
+        if( strlen( url ) < 256 )
+            strcpy( buffer, url );
+    }
+
     int main()
     {
         tobii_api_t* api;
         tobii_error_t error = tobii_api_create( &api, NULL, NULL );
         assert( error == TOBII_ERROR_NO_ERROR );
 
+        char url[ 256 ] = { 0 };
+        error = tobii_enumerate_local_device_urls( api, url_receiver, url );
+        assert( error == TOBII_ERROR_NO_ERROR && *url != '\0' );
+
         tobii_device_t* device;
-        error = tobii_device_create( api, NULL, &device );
+        error = tobii_device_create( api, url, &device );
         assert( error == TOBII_ERROR_NO_ERROR );
 
         int is_running = 1000; // in this sample, exit after some iterations
         while( --is_running > 0 )
         {
-            error = tobii_wait_for_callbacks( device );
+            error = tobii_wait_for_callbacks( NULL, 1, &device );
             assert( error == TOBII_ERROR_NO_ERROR || error == TOBII_ERROR_TIMED_OUT );
 
-            error = tobii_process_callbacks( device );
+            error = tobii_device_process_callbacks( device );
             assert( error == TOBII_ERROR_NO_ERROR );
         }
 
@@ -817,8 +877,8 @@ tobii_process_callbacks(), tobii_clear_callback_buffers()
 
 
 
-tobii_process_callbacks
------------------------
+tobii_device_process_callbacks
+------------------------------
 
 ### Function
 
@@ -828,26 +888,26 @@ Receives data packages from the device, and sends the data through any registere
 ### Syntax
 
     #include <tobii/tobii.h>
-    tobii_error_t tobii_process_callbacks( tobii_device_t* device );
+    tobii_error_t tobii_device_process_callbacks( tobii_device_t* device );
 
 
 ### Remarks
 
 Stream engine does not do any kind of background processing, it doesn't start any threads. It doesn't use any
 asynchronous callbacks. This means that in order to receive data from the device, the application needs to manually
-request the callbacks to happen synchronously, and this is done by calling tobii_process_callbacks.
+request the callbacks to happen synchronously, and this is done by calling tobii_device_process_callbacks.
 
-tobii_process_callbacks will receive any data packages that are incoming from the device, process them and call any
-subscribed callbacks with the data. No callbacks will be called outside of tobii_process_callbacks, so the application
+tobii_device_process_callbacks will receive any data packages that are incoming from the device, process them and call any
+subscribed callbacks with the data. No callbacks will be called outside of tobii_device_process_callbacks, so the application
 have full control over when to receive callbacks.
 
-tobii_process_callbacks will not wait for data, and will early-out if there's nothing to process. In order to maintain
-the connection to the device, tobii_process_callbacks should be called at least 10 times per second.
+tobii_device_process_callbacks will not wait for data, and will early-out if there's nothing to process. In order to maintain
+the connection to the device, tobii_device_process_callbacks should be called at least 10 times per second.
 
-The recommended way to use tobii_process_callbacks, is to start a dedicated thread, and alternately call
-tobii_wait_for_callbacks and tobii_process_callbacks. See tobii_wait_for_callbacks() for more details.
+The recommended way to use tobii_device_process_callbacks, is to start a dedicated thread, and alternately call
+tobii_wait_for_callbacks and tobii_device_process_callbacks. See tobii_wait_for_callbacks() for more details.
 
-If there is already a suitable thread to regularly run tobii_process_callbacks from (possibly interleaved with
+If there is already a suitable thread to regularly run tobii_device_process_callbacks from (possibly interleaved with
 application specific operations), it is possible to do this without calling tobii_wait_for_callbacks(). In this
 scenario, time synchronization needs to be handled manually or the timestamps will start drifting. See 
 tobii_update_timesync() for more details.
@@ -858,26 +918,36 @@ tobii_device_create_ex.
 
 ### Return value
 
-If the operation is successful, tobii_process_callbacks returns **TOBII_ERROR_NO_ERROR**. If the call fails,
-tobii_process_callbacks returns one of the following:
+If the operation is successful, tobii_device_process_callbacks returns **TOBII_ERROR_NO_ERROR**. If the call fails,
+tobii_device_process_callbacks returns one of the following:
 
 -   **TOBII_ERROR_INVALID_PARAMETER**
 
     The *device* parameter was passed in as NULL. 
 
--   **TOBII_ERROR_CONNECTION_FAILED**, **TRACKER_ERROR_FIRMWARE_NO_RESPONSE**
+-   **TOBII_ERROR_ALLOCATION_FAILED**
 
-    The connection to the device was lost. Call tobii_reconnect() to re-establish connection.
+    The internal call to malloc or to the custom memory allocator (if used) returned NULL, so device creation failed.
 
--   **TOBII_ERROR_INTERNAL**, **TRACKER_ERROR_NOT_SUPPORTED**, **TRACKER_ERROR_OPERATION_FAILED**
+-   **TOBII_ERROR_CONNECTION_FAILED**
+
+    The connection to the device was lost. Call tobii_device_reconnect() to re-establish connection.
+
+-   **TOBII_ERROR_INTERNAL**
 
     Some unexpected internal error occurred. This error should normally not be returned, so if it is, please contact
     the support.
 
+-   **TOBII_ERROR_CALLBACK_IN_PROGRESS**
+
+    The function failed because it was called from within a callback triggered from an API call such as 
+    tobii_device_process_callbacks(), tobii_calibration_retrieve(), tobii_enumerate_illumination_modes(), 
+    or tobii_license_key_retrieve().
+    Calling tobii_device_process_callbacks from within a callback function is not supported.
 
 ### See also
 
-tobii_wait_for_callbacks(), tobii_clear_callback_buffers(), tobii_reconnect(), tobii_update_timesync()
+tobii_wait_for_callbacks(), tobii_device_clear_callback_buffers(), tobii_device_reconnect(), tobii_update_timesync()
 
 
 ### Example
@@ -887,14 +957,27 @@ tobii_wait_for_callbacks(), tobii_clear_callback_buffers(), tobii_reconnect(), t
     #include <stdio.h>
     #include <assert.h>
 
+    static void url_receiver( char const* url, void* user_data )
+    {
+        char* buffer = (char*)user_data;
+        if( *buffer != '\0' ) return; // only keep first value
+
+        if( strlen( url ) < 256 )
+            strcpy( buffer, url );
+    }
+
     int main()
     {
         tobii_api_t* api;
         tobii_error_t error = tobii_api_create( &api, NULL, NULL );
         assert( error == TOBII_ERROR_NO_ERROR );
 
+        char url[ 256 ] = { 0 };
+        error = tobii_enumerate_local_device_urls( api, url_receiver, url );
+        assert( error == TOBII_ERROR_NO_ERROR && *url != '\0' );
+
         tobii_device_t* device;
-        error = tobii_device_create( api, NULL, &device );
+        error = tobii_device_create( api, url, &device );
         assert( error == TOBII_ERROR_NO_ERROR );
 
         int is_running = 1000; // in this sample, exit after some iterations
@@ -902,7 +985,7 @@ tobii_wait_for_callbacks(), tobii_clear_callback_buffers(), tobii_reconnect(), t
         {
             // other parts of main loop would be executed here
 
-            error = tobii_process_callbacks( device );
+            error = tobii_device_process_callbacks( device );
             assert( error == TOBII_ERROR_NO_ERROR );
         }
 
@@ -918,7 +1001,7 @@ tobii_wait_for_callbacks(), tobii_clear_callback_buffers(), tobii_reconnect(), t
 
 
 
-tobii_clear_callback_buffers
+tobii_device_clear_callback_buffers
 ----------------------------
 
 ### Function
@@ -929,7 +1012,7 @@ Removes all unprocessed entries from the callback queues.
 ### Syntax
 
     #include <tobii/tobii.h>
-    tobii_error_t tobii_clear_callback_buffers( tobii_device_t* device );
+    tobii_error_t tobii_device_clear_callback_buffers( tobii_device_t* device );
 
 
 ### Remarks
@@ -937,8 +1020,8 @@ Removes all unprocessed entries from the callback queues.
 All the data that is received and processed are written into internal buffers used for the callbacks. In some
 circumstances, for example during initialization, you might want to discard any data that has been buffered but not
 processed, without having to destroy/recreate the device, and without having to implement the filtering out of unwanted
-data. tobii_clear_callback_buffers will clear all buffered data, and only data arriving *after* the call to
-tobii_clear_callback_buffers will be forwarded to callbacks.
+data. tobii_device_clear_callback_buffers will clear all buffered data, and only data arriving *after* the call to
+tobii_device_clear_callback_buffers will be forwarded to callbacks.
 
 *device* must be a pointer to a valid tobii_device_t instance as created by calling tobii_device_create or 
 tobii_device_create_ex.
@@ -946,26 +1029,27 @@ tobii_device_create_ex.
 
 ### Return value
 
-If the operation is successful, tobii_clear_callback_buffers returns **TOBII_ERROR_NO_ERROR**. If the call fails,
-tobii_clear_callback_buffers returns one of the following:
+If the operation is successful, tobii_device_clear_callback_buffers returns **TOBII_ERROR_NO_ERROR**. If the call fails,
+tobii_device_clear_callback_buffers returns one of the following:
 
 -   **TOBII_ERROR_INVALID_PARAMETER**
 
-    The *device* parameter was passed in as NULL. 
+    The *device* parameter was passed in as NULL.
 
--   **TOBII_ERROR_INTERNAL**
+-   **TOBII_ERROR_CALLBACK_IN_PROGRESS**
 
-    Some unexpected internal error occurred. This error should normally not be returned, so if it is, please contact
-    the support.
-
+    The function failed because it was called from within a callback triggered from an API call such as 
+    tobii_device_process_callbacks(), tobii_calibration_retrieve(), tobii_enumerate_illumination_modes(), 
+    or tobii_license_key_retrieve().
+    Calling tobii_device_clear_callback_buffers from within a callback function is not supported.
 
 ### See also
 
-tobii_wait_for_callbacks(), tobii_process_callbacks()
+tobii_wait_for_callbacks(), tobii_device_process_callbacks()
 
 
 
-tobii_reconnect
+tobii_device_reconnect
 ---------------
 
 ### Function
@@ -976,13 +1060,13 @@ Establish a new connection after a disconnect.
 ### Syntax
 
     #include <tobii/tobii.h>
-    tobii_error_t tobii_reconnect( tobii_device_t* device );
+    tobii_error_t tobii_device_reconnect( tobii_device_t* device );
 
 
 ### Remarks
 
 When receiving the error code TOBII_ERROR_CONNECTION_FAILED, it is necessary to explicitly request reconnection, by
-calling tobii_reconnect.
+calling tobii_device_reconnect.
 
 *device* must be a pointer to a valid tobii_device_t instance as created by calling tobii_device_create or 
 tobii_device_create_ex.
@@ -1004,15 +1088,21 @@ tobii_device_create_ex.
     Some unexpected internal error occurred. This error should normally not be returned, so if it is, please contact
     the support.
 
+-   **TOBII_ERROR_CALLBACK_IN_PROGRESS**
+
+    The function failed because it was called from within a callback triggered from an API call such as 
+    tobii_device_process_callbacks(), tobii_calibration_retrieve(), tobii_enumerate_illumination_modes(), 
+    or tobii_license_key_retrieve().
+    Calling tobii_device_reconnect from within a callback function is not supported.
 
 ### See also
 
-tobii_process_callbacks()
+tobii_device_process_callbacks()
 
 
 ### Example
 
-See tobii_process_callbacks()
+See tobii_device_process_callbacks()
 
 
 
@@ -1035,7 +1125,7 @@ Makes a manual re-synchronization of system timestamps and device timestamps.
 The clock on the device and the clock on the system it is connected to may drift over time, and therefore
 they need to be periodically re-synchronized. In the default usage scenario, when regularly calling
 tobii_wait_for_callbacks(), this re-sychronization is handled automatically at a pre-determined interval.
-When not using tobii_wait_for_callbacks, and instead relying on only tobii_process_callbacks, it is necessary
+When not using tobii_wait_for_callbacks, and instead relying on only tobii_device_process_callbacks, it is necessary
 to re-synchronize manually, which is done by calling tobii_update_timesync every ~30 seconds.
 
 *device* must be a pointer to a valid tobii_device_t instance as created by calling tobii_device_create or 
@@ -1060,10 +1150,16 @@ the call fails, tobii_update_timesync returns one of the following:
     Some unexpected internal error occurred. This error should normally not be returned, so if it is, please contact
     the support.
 
+-   **TOBII_ERROR_CALLBACK_IN_PROGRESS**
+
+    The function failed because it was called from within a callback triggered from an API call such as 
+    tobii_device_process_callbacks(), tobii_calibration_retrieve(), tobii_enumerate_illumination_modes(), 
+    or tobii_license_key_retrieve().
+    Calling tobii_update_timesync from within a callback function is not supported.
 
 ### See also
 
-tobii_wait_for_callbacks(), tobii_reconnect(),  tobii_process_callbacks(), tobii_system_clock()
+tobii_wait_for_callbacks(), tobii_device_reconnect(),  tobii_device_process_callbacks(), tobii_system_clock()
 
 
 ### Example
@@ -1073,20 +1169,33 @@ tobii_wait_for_callbacks(), tobii_reconnect(),  tobii_process_callbacks(), tobii
     #include <stdio.h>
     #include <assert.h>
 
+    static void url_receiver( char const* url, void* user_data )
+    {
+        char* buffer = (char*)user_data;
+        if( *buffer != '\0' ) return; // only keep first value
+
+        if( strlen( url ) < 256 )
+            strcpy( buffer, url );
+    }
+
     int main()
     {
         tobii_api_t* api;
         tobii_error_t error = tobii_api_create( &api, NULL, NULL );
         assert( error == TOBII_ERROR_NO_ERROR );
 
+        char url[ 256 ] = { 0 };
+        error = tobii_enumerate_local_device_urls( api, url_receiver, url );
+        assert( error == TOBII_ERROR_NO_ERROR && *url != '\0' );
+
         tobii_device_t* device;
-        error = tobii_device_create( api, NULL, &device );
+        error = tobii_device_create( api, url, &device );
         assert( error == TOBII_ERROR_NO_ERROR );
 
         int is_running = 1000; // in this sample, exit after some iterations
         while( --is_running > 0 )
         {
-            error = tobii_process_callbacks( device );
+            error = tobii_device_process_callbacks( device );
             assert( error == TOBII_ERROR_NO_ERROR );
 
             error = tobii_update_timesync( device );
@@ -1139,12 +1248,6 @@ tobii_system_clock returns one of the following:
 -   **TOBII_ERROR_INVALID_PARAMETER**
 
     The *api* or *timestamp_us* parameters were passed in as NULL.
-
--   **TOBII_ERROR_INTERNAL**
-
-    Some unexpected internal error occurred. This error should normally not be returned, so if it is, please contact
-    the support.
-
 
 ### See also
 
@@ -1217,14 +1320,21 @@ fails, tobii_get_device_info returns one of the following:
 
     One or more of the *device* and *device_info* parameters were passed in as NULL.
 
--   **TOBII_ERROR_CONNECTION_FAILED**, **TOBII_ERROR_FIRMWARE_NO_RESPONSE**
+-   **TOBII_ERROR_CONNECTION_FAILED**
 
-    The connection to the device was lost. Call tobii_reconnect() to re-establish connection.
+    The connection to the device was lost. Call tobii_device_reconnect() to re-establish connection.
 
--   **TOBII_ERROR_INTERNAL**, **TOBII_ERROR_NOT_SUPPORTED**, **TOBII_ERROR_OPERATION_FAILED**
+-   **TOBII_ERROR_INTERNAL**
 
     Some unexpected internal error occurred. This error should normally not be returned, so if it is, please contact
     the support.
+
+-   **TOBII_ERROR_CALLBACK_IN_PROGRESS**
+
+    The function failed because it was called from within a callback triggered from an API call such as 
+    tobii_device_process_callbacks(), tobii_calibration_retrieve(), tobii_enumerate_illumination_modes(), 
+    or tobii_license_key_retrieve().
+    Calling tobii_get_device_info from within a callback function is not supported.
 
 
 ### See also
@@ -1239,14 +1349,27 @@ tobii_device_create(), tobii_enumerate_local_device_urls()
     #include <assert.h>
     #include <stdio.h>
 
+    static void url_receiver( char const* url, void* user_data )
+    {
+        char* buffer = (char*)user_data;
+        if( *buffer != '\0' ) return; // only keep first value
+
+        if( strlen( url ) < 256 )
+            strcpy( buffer, url );
+    }
+
     int main()
     {
         tobii_api_t* api;
         tobii_error_t error = tobii_api_create( &api, NULL, NULL );
         assert( error == TOBII_ERROR_NO_ERROR );
 
+        char url[ 256 ] = { 0 };
+        error = tobii_enumerate_local_device_urls( api, url_receiver, url );
+        assert( error == TOBII_ERROR_NO_ERROR && *url != '\0' );
+
         tobii_device_t* device;
-        error = tobii_device_create( api, NULL, &device );
+        error = tobii_device_create( api, url, &device );
         assert( error == TOBII_ERROR_NO_ERROR );
 
         tobii_device_info_t info;
@@ -1308,14 +1431,21 @@ fails, tobii_get_track_box returns one of the following:
 
     One or more of the *device* and *track_box* parameters were passed in as NULL. 
 
--   **TOBII_ERROR_CONNECTION_FAILED**, **TOBII_ERROR_FIRMWARE_NO_RESPONSE**
+-   **TOBII_ERROR_CONNECTION_FAILED**
 
-    The connection to the device was lost. Call tobii_reconnect() to re-establish connection.
+    The connection to the device was lost. Call tobii_device_reconnect() to re-establish connection.
 
--   **TOBII_ERROR_INTERNAL**, **TOBII_ERROR_NOT_SUPPORTED**, **TOBII_ERROR_OPERATION_FAILED**	
+-   **TOBII_ERROR_INTERNAL**
 
     Some unexpected internal error occurred. This error should normally not be returned, so if it is, please contact
     the support.
+
+-   **TOBII_ERROR_CALLBACK_IN_PROGRESS**
+
+    The function failed because it was called from within a callback triggered from an API call such as 
+    tobii_device_process_callbacks(), tobii_calibration_retrieve(), tobii_enumerate_illumination_modes(), 
+    or tobii_license_key_retrieve().
+    Calling tobii_get_track_box from within a callback function is not supported.
 
 
 ### Example
@@ -1325,14 +1455,27 @@ fails, tobii_get_track_box returns one of the following:
     #include <stdio.h>
     #include <assert.h>
 
+    static void url_receiver( char const* url, void* user_data )
+    {
+        char* buffer = (char*)user_data;
+        if( *buffer != '\0' ) return; // only keep first value
+
+        if( strlen( url ) < 256 )
+            strcpy( buffer, url );
+    }
+
     int main()
     {
         tobii_api_t* api;
         tobii_error_t error = tobii_api_create( &api, NULL, NULL );
         assert( error == TOBII_ERROR_NO_ERROR );
 
+        char url[ 256 ] = { 0 };
+        error = tobii_enumerate_local_device_urls( api, url_receiver, url );
+        assert( error == TOBII_ERROR_NO_ERROR && *url != '\0' );
+
         tobii_device_t* device;
-        error = tobii_device_create( api, NULL, &device );
+        error = tobii_device_create( api, url, &device );
         assert( error == TOBII_ERROR_NO_ERROR );
 
         tobii_track_box_t track_box;
@@ -1406,8 +1549,8 @@ tobii_device_create_ex.
 **TOBII_STATE_BOOL_TRUE** if the state is true, otherwise **TOBII_STATE_BOOL_FALSE**. *value* will remain
 unmodified if the call failed.
 
-**NOTE:** This method relies on cached values which is updated when tobii_process_callbacks() is called, so it might not
-represent the true state of the device if some time have passed since the last call to tobii_process_callbacks().
+**NOTE:** This method relies on cached values which is updated when tobii_device_process_callbacks() is called, so it might not
+represent the true state of the device if some time have passed since the last call to tobii_device_process_callbacks().
 
 
 ### Return value
@@ -1421,13 +1564,14 @@ will be returned:
 
 -   **TOBII_ERROR_NOT_SUPPORTED**
 
-    The tracker firmware has no support for retrieving the value of this state.
+    The device firmware has no support for retrieving the value of this state.
 
--   **TOBII_ERROR_INTERNAL**
+-   **TOBII_ERROR_CALLBACK_IN_PROGRESS**
 
-    Some unexpected internal error occurred. This error should normally not be returned, so if it is, please contact
-    the support.
-
+    The function failed because it was called from within a callback triggered from an API call such as 
+    tobii_device_process_callbacks(), tobii_calibration_retrieve(), tobii_enumerate_illumination_modes(), 
+    or tobii_license_key_retrieve().
+    Calling tobii_get_state_bool from within a callback function is not supported.
 
 ### Example
 
@@ -1436,14 +1580,27 @@ will be returned:
     #include <stdio.h>
     #include <assert.h>
 
+    static void url_receiver( char const* url, void* user_data )
+    {
+        char* buffer = (char*)user_data;
+        if( *buffer != '\0' ) return; // only keep first value
+
+        if( strlen( url ) < 256 )
+            strcpy( buffer, url );
+    }
+
     int main()
     {
         tobii_api_t* api;
         tobii_error_t error = tobii_api_create( &api, NULL, NULL );
         assert( error == TOBII_ERROR_NO_ERROR );
 
+        char url[ 256 ] = { 0 };
+        error = tobii_enumerate_local_device_urls( api, url_receiver, url );
+        assert( error == TOBII_ERROR_NO_ERROR && *url != '\0' );
+
         tobii_device_t* device;
-        error = tobii_device_create( api, NULL, &device );
+        error = tobii_device_create( api, url, &device );
         assert( error == TOBII_ERROR_NO_ERROR );
 
         tobii_state_bool_t value;
@@ -1454,6 +1611,106 @@ will be returned:
             printf( "Device is paused!" );
         else
             printf( "Device is running!" );
+
+        tobii_device_destroy( device );
+        tobii_api_destroy( api );
+
+        return 0;
+    }
+
+
+uint32_t* value );
+
+tobii_get_state_uint32
+--------------------
+
+### Function
+
+Gets the current value of a state in the tracker.
+
+
+### Syntax
+
+#include <tobii/tobii.h>
+tobii_error_t tobii_get_state_uint32( tobii_device_t* device, tobii_state_t state,
+uint32_t* value );
+
+
+### Remarks
+
+*device* must be a pointer to a valid tobii_device_t instance as created by calling tobii_device_create or
+tobii_device_create_ex.
+
+*state* is one of the enum values in tobii_state_t listed below:
+
+-   **TOBII_STATE_CALIBRATION_ID**
+
+Is the unique value identifying the calibration blob. 0 value indicates default calibration/no calibration done.
+
+*value* must be a pointer to a valid uint32 instance. On success, *value* will be set to id of the calibration blob.
+
+**NOTE:** This method relies on cached values which is updated when tobii_process_callbacks() is called, so it might not
+represent the true state of the device if some time have passed since the last call to tobii_process_callbacks().
+
+
+### Return value
+
+If the call was successful **TOBII_ERROR_NO_ERROR** will be returned. If the call has failed one of the following error
+will be returned:
+
+-   **TOBII_ERROR_INVALID_PARAMETER**
+
+The *device* or *value* parameter has been passed in as NULL or you passed in a *state* that is not a uint32 state i.e
+TOBII_STATE_CALIBRATION_ID.
+
+-   **TOBII_ERROR_NOT_SUPPORTED**
+
+The device firmware has no support for retrieving the value of this state.
+
+-   **TOBII_ERROR_CALLBACK_IN_PROGRESS**
+
+    The function failed because it was called from within a callback triggered from an API call such as 
+    tobii_device_process_callbacks(), tobii_calibration_retrieve(), tobii_enumerate_illumination_modes(), 
+    or tobii_license_key_retrieve().
+    Calling tobii_get_state_uint32 from within a callback function is not supported.
+
+
+### Example
+
+
+    #include <tobii/tobii.h>
+    #include <stdio.h>
+    #include <inttypes.h>
+    #include <assert.h>
+
+    static void url_receiver( char const* url, void* user_data )
+    {
+        char* buffer = (char*)user_data;
+        if( *buffer != '\0' ) return; // only keep first value
+
+        if( strlen( url ) < 256 )
+            strcpy( buffer, url );
+    }
+
+    int main()
+    {
+        tobii_api_t* api;
+        tobii_error_t error = tobii_api_create( &api, NULL, NULL );
+        assert( error == TOBII_ERROR_NO_ERROR );
+
+        char url[ 256 ] = { 0 };
+        error = tobii_enumerate_local_device_urls( api, url_receiver, url );
+        assert( error == TOBII_ERROR_NO_ERROR && *url != '\0' );
+
+        tobii_device_t* device;
+        error = tobii_device_create( api, url, &device );
+        assert( error == TOBII_ERROR_NO_ERROR );
+
+        uint32_t value;
+        error = tobii_get_state_uint32( device, TOBII_STATE_DEVICE_PAUSED, &value );
+        assert( error == TOBII_ERROR_NO_ERROR );
+
+        printf( "%" PRIu32 "\n", value );
 
         tobii_device_destroy( device );
         tobii_api_destroy( api );
@@ -1515,15 +1772,21 @@ will be returned:
     The *device* or *supported* parameter has been passed in as NULL or you passed in an invalid enum value
     for *capability*.
 
--   **TOBII_ERROR_CONNECTION_FAILED**, **TOBII_ERROR_FIRMWARE_NO_RESPONSE**
+-   **TOBII_ERROR_CONNECTION_FAILED**
 
-    The connection to the device was lost. Call tobii_reconnect() to re-establish connection.
+    The connection to the device was lost. Call tobii_device_reconnect() to re-establish connection.
 
--   **TOBII_ERROR_INTERNAL**, **TOBII_ERROR_NOT_SUPPORTED**, **TOBII_ERROR_OPERATION_FAILED**	
+-   **TOBII_ERROR_INTERNAL**
 
     Some unexpected internal error occurred. This error should normally not be returned, so if it is, please contact
     the support.
 
+-   **TOBII_ERROR_CALLBACK_IN_PROGRESS**
+
+    The function failed because it was called from within a callback triggered from an API call such as 
+    tobii_device_process_callbacks(), tobii_calibration_retrieve(), tobii_enumerate_illumination_modes(), 
+    or tobii_license_key_retrieve().
+    Calling tobii_capability_supported from within a callback function is not supported.
 
 ### See also
 
@@ -1537,14 +1800,27 @@ tobii_stream_supported()
     #include <stdio.h>
     #include <assert.h>
 
+    static void url_receiver( char const* url, void* user_data )
+    {
+        char* buffer = (char*)user_data;
+        if( *buffer != '\0' ) return; // only keep first value
+
+        if( strlen( url ) < 256 )
+            strcpy( buffer, url );
+    }
+
     int main()
     {
         tobii_api_t* api;
         tobii_error_t error = tobii_api_create( &api, NULL, NULL );
         assert( error == TOBII_ERROR_NO_ERROR );
 
+        char url[ 256 ] = { 0 };
+        error = tobii_enumerate_local_device_urls( api, url_receiver, url );
+        assert( error == TOBII_ERROR_NO_ERROR && *url != '\0' );
+
         tobii_device_t* device;
-        error = tobii_device_create( api, NULL, &device );
+        error = tobii_device_create( api, url, &device );
         assert( error == TOBII_ERROR_NO_ERROR );
 
         tobii_supported_t supported;
@@ -1611,15 +1887,12 @@ will be returned:
     The *device* or *supported* parameter has been passed in as NULL or you passed in an invalid enum value
     for *stream*.
 
--   **TOBII_ERROR_CONNECTION_FAILED**, **TOBII_ERROR_FIRMWARE_NO_RESPONSE**
+-   **TOBII_ERROR_CALLBACK_IN_PROGRESS**
 
-    The connection to the device was lost. Call tobii_reconnect() to re-establish connection.
-
--   **TOBII_ERROR_INTERNAL**, **TOBII_ERROR_NOT_SUPPORTED**, **TOBII_ERROR_OPERATION_FAILED**	
-
-    Some unexpected internal error occurred. This error should normally not be returned, so if it is, please contact
-    the support.
-
+    The function failed because it was called from within a callback triggered from an API call such as 
+    tobii_device_process_callbacks(), tobii_calibration_retrieve(), tobii_enumerate_illumination_modes(), 
+    or tobii_license_key_retrieve().
+    Calling tobii_stream_supported from within a callback function is not supported.
 
 ### See also
 
@@ -1633,14 +1906,27 @@ tobii_capability_supported()
     #include <stdio.h>
     #include <assert.h>
 
+    static void url_receiver( char const* url, void* user_data )
+    {
+        char* buffer = (char*)user_data;
+        if( *buffer != '\0' ) return; // only keep first value
+
+        if( strlen( url ) < 256 )
+            strcpy( buffer, url );
+    }
+
     int main()
     {
         tobii_api_t* api;
         tobii_error_t error = tobii_api_create( &api, NULL, NULL );
         assert( error == TOBII_ERROR_NO_ERROR );
 
+        char url[ 256 ] = { 0 };
+        error = tobii_enumerate_local_device_urls( api, url_receiver, url );
+        assert( error == TOBII_ERROR_NO_ERROR && *url != '\0' );
+
         tobii_device_t* device;
-        error = tobii_device_create( api, NULL, &device );
+        error = tobii_device_create( api, url, &device );
         assert( error == TOBII_ERROR_NO_ERROR );
 
         tobii_supported_t supported;
@@ -1701,14 +1987,13 @@ currently looking at. The data is lightly filtered for stability.
 
     void gaze_point_callback( tobii_gaze_point_t const* gaze_point, void* user_data )
 
-This function will be called when there is a new gaze data available. It is called with the following parameters:
+This function will be called when there is new gaze data available. It is called with the following parameters:
 
 -   *gaze_point*
 
     This is a pointer to a struct containing the following data:
 
     -   *timestamp_us*
-
         Timestamp value for when the gaze point was captured, measured in microseconds (us). The epoch is undefined,
         so these timestamps are only useful for calculating the time elapsed between a pair of values. The function
         tobii_system_clock() can be used to retrieve a timestamp using the same clock and same relative values as this
@@ -1745,15 +2030,26 @@ fails, tobii_gaze_point_subscribe returns one of the following:
     A subscription for gaze points were already made. There can only be one callback registered at a time.
     To change to another callback, first call tobii_gaze_point_unsubscribe().
 
--   **TOBII_ERROR_INTERNAL**, **TOBII_ERROR_NOT_SUPPORTED**, **TOBII_ERROR_OPERATION_FAILED**	
+-   **TOBII_ERROR_NOT_SUPPORTED**
+
+    The device doesn't support the stream. This error is returned if the API is called with an old device and/or that is
+    running outdated firmware.
+
+-   **TOBII_ERROR_INTERNAL**
 
     Some unexpected internal error occurred. This error should normally not be returned, so if it is, please contact
     the support
 
+-   **TOBII_ERROR_CALLBACK_IN_PROGRESS**
+
+    The function failed because it was called from within a callback triggered from an API call such as 
+    tobii_device_process_callbacks(), tobii_calibration_retrieve(), tobii_enumerate_illumination_modes(), 
+    or tobii_license_key_retrieve().
+    Calling tobii_gaze_point_subscribe from within a callback function is not supported.
 
 ### See also
 
-tobii_gaze_point_unsubscribe(), tobii_process_callbacks(), tobii_system_clock()
+tobii_gaze_point_unsubscribe(), tobii_device_process_callbacks(), tobii_system_clock()
 
 
 ### Example
@@ -1771,14 +2067,27 @@ tobii_gaze_point_unsubscribe(), tobii_process_callbacks(), tobii_system_clock()
                 gaze_point->position_xy[ 1 ] );
     }
 
+    static void url_receiver( char const* url, void* user_data )
+    {
+        char* buffer = (char*)user_data;
+        if( *buffer != '\0' ) return; // only keep first value
+
+        if( strlen( url ) < 256 )
+            strcpy( buffer, url );
+    }
+
     int main()
     {
         tobii_api_t* api;
         tobii_error_t error = tobii_api_create( &api, NULL, NULL );
         assert( error == TOBII_ERROR_NO_ERROR );
 
+        char url[ 256 ] = { 0 };
+        error = tobii_enumerate_local_device_urls( api, url_receiver, url );
+        assert( error == TOBII_ERROR_NO_ERROR && *url != '\0' );
+
         tobii_device_t* device;
-        error = tobii_device_create( api, NULL, &device );
+        error = tobii_device_create( api, url, &device );
         assert( error == TOBII_ERROR_NO_ERROR );
 
         error = tobii_gaze_point_subscribe( device, gaze_point_callback, 0 );
@@ -1787,10 +2096,10 @@ tobii_gaze_point_unsubscribe(), tobii_process_callbacks(), tobii_system_clock()
         int is_running = 1000; // in this sample, exit after some iterations
         while( --is_running > 0 )
         {
-            error = tobii_wait_for_callbacks( device );
+            error = tobii_wait_for_callbacks( NULL, 1, &device );
             assert( error == TOBII_ERROR_NO_ERROR || error == TOBII_ERROR_TIMED_OUT );
 
-            error = tobii_process_callbacks( device );
+            error = tobii_device_process_callbacks( device );
             assert( error == TOBII_ERROR_NO_ERROR );
         }
 
@@ -1841,11 +2150,22 @@ fails, tobii_gaze_point_unsubscribe returns one of the following:
     There was no subscription for gaze points. It is only valid to call tobii_gaze_point_unsubscribe()
     after first successfully calling tobii_gaze_point_subscribe().
 
--   **TOBII_ERROR_INTERNAL**, **TOBII_ERROR_NOT_SUPPORTED**, **TOBII_ERROR_OPERATION_FAILED**	
+-   **TOBII_ERROR_NOT_SUPPORTED**
+
+    The device doesn't support the stream. This error is returned if the API is called with an old device and/or that is
+    running outdated firmware.
+
+-   **TOBII_ERROR_INTERNAL**
 
     Some unexpected internal error occurred. This error should normally not be returned, so if it is, please contact
     the support
 
+-   **TOBII_ERROR_CALLBACK_IN_PROGRESS**
+
+    The function failed because it was called from within a callback triggered from an API call such as 
+    tobii_device_process_callbacks(), tobii_calibration_retrieve(), tobii_enumerate_illumination_modes(), 
+    or tobii_license_key_retrieve().
+    Calling tobii_gaze_point_unsubscribe from within a callback function is not supported.
 
 ### See also
 
@@ -1933,15 +2253,26 @@ fails, tobii_gaze_origin_subscribe returns one of the following:
     A subscription for gaze origins were already made. There can only be one callback registered at a time.
     To change to another callback, first call tobii_gaze_origin_unsubscribe().
 
--   **TOBII_ERROR_INTERNAL**, **TOBII_ERROR_NOT_SUPPORTED**, **TOBII_ERROR_OPERATION_FAILED**	
+-   **TOBII_ERROR_NOT_SUPPORTED**
+
+    The device doesn't support the stream. This error is returned if the API is called with an old device and/or that is
+    running outdated firmware.
+
+-   **TOBII_ERROR_INTERNAL**
 
     Some unexpected internal error occurred. This error should normally not be returned, so if it is, please contact
     the support
 
+-   **TOBII_ERROR_CALLBACK_IN_PROGRESS**
+
+    The function failed because it was called from within a callback triggered from an API call such as 
+    tobii_device_process_callbacks(), tobii_calibration_retrieve(), tobii_enumerate_illumination_modes(), 
+    or tobii_license_key_retrieve().
+    Calling tobii_gaze_origin_subscribe from within a callback function is not supported.
 
 ### See also
 
-tobii_eye_position_normalized_subscribe(), tobii_gaze_origin_unsubscribe(), tobii_process_callbacks(),
+tobii_eye_position_normalized_subscribe(), tobii_gaze_origin_unsubscribe(), tobii_device_process_callbacks(),
 tobii_system_clock()
 
 
@@ -1969,14 +2300,27 @@ tobii_system_clock()
         printf( "\n" );
     }
 
+    static void url_receiver( char const* url, void* user_data )
+    {
+        char* buffer = (char*)user_data;
+        if( *buffer != '\0' ) return; // only keep first value
+
+        if( strlen( url ) < 256 )
+            strcpy( buffer, url );
+    }
+
     int main()
     {
         tobii_api_t* api;
         tobii_error_t error = tobii_api_create( &api, NULL, NULL );
         assert( error == TOBII_ERROR_NO_ERROR );
 
+        char url[ 256 ] = { 0 };
+        error = tobii_enumerate_local_device_urls( api, url_receiver, url );
+        assert( error == TOBII_ERROR_NO_ERROR && *url != '\0' );
+
         tobii_device_t* device;
-        error = tobii_device_create( api, NULL, &device );
+        error = tobii_device_create( api, url, &device );
         assert( error == TOBII_ERROR_NO_ERROR );
 
         error = tobii_gaze_origin_subscribe( device, gaze_origin_callback, 0 );
@@ -1985,10 +2329,10 @@ tobii_system_clock()
         int is_running = 1000; // in this sample, exit after some iterations
         while( --is_running > 0 )
         {
-            error = tobii_wait_for_callbacks( device );
+            error = tobii_wait_for_callbacks( NULL, 1, &device );
             assert( error == TOBII_ERROR_NO_ERROR || error == TOBII_ERROR_TIMED_OUT );
 
-            error = tobii_process_callbacks( device );
+            error = tobii_device_process_callbacks( device );
             assert( error == TOBII_ERROR_NO_ERROR );
         }
 
@@ -2039,11 +2383,22 @@ fails, tobii_gaze_origin_unsubscribe returns one of the following:
     There was no subscription for gaze origins. It is only valid to call tobii_gaze_origin_unsubscribe()
     after first successfully calling tobii_gaze_origin_subscribe().
 
--   **TOBII_ERROR_INTERNAL**, **TOBII_ERROR_NOT_SUPPORTED**, **TOBII_ERROR_OPERATION_FAILED**	
+-   **TOBII_ERROR_NOT_SUPPORTED**
+
+    The device doesn't support the stream. This error is returned if the API is called with an old device and/or that is
+    running outdated firmware.
+
+-   **TOBII_ERROR_INTERNAL**
 
     Some unexpected internal error occurred. This error should normally not be returned, so if it is, please contact
     the support
 
+-   **TOBII_ERROR_CALLBACK_IN_PROGRESS**
+
+    The function failed because it was called from within a callback triggered from an API call such as 
+    tobii_device_process_callbacks(), tobii_calibration_retrieve(), tobii_enumerate_illumination_modes(), 
+    or tobii_license_key_retrieve().
+    Calling tobii_gaze_origin_unsubscribe from within a callback function is not supported.
 
 ### See also
 
@@ -2135,15 +2490,26 @@ fails, tobii_eye_position_normalized_subscribe returns one of the following:
     A subscription for normalized eye positions were already made. There can only be one callback registered at a time.
     To change to another callback, first call tobii_eye_position_normalized_unsubscribe().
 
--   **TOBII_ERROR_INTERNAL**, **TOBII_ERROR_NOT_SUPPORTED**, **TOBII_ERROR_OPERATION_FAILED**	
+-   **TOBII_ERROR_NOT_SUPPORTED**
+
+    The device doesn't support the stream. This error is returned if the API is called with an old device and/or that is
+    running outdated firmware.
+
+-   **TOBII_ERROR_INTERNAL**
 
     Some unexpected internal error occurred. This error should normally not be returned, so if it is, please contact
     the support
 
+-   **TOBII_ERROR_CALLBACK_IN_PROGRESS**
+
+    The function failed because it was called from within a callback triggered from an API call such as 
+    tobii_device_process_callbacks(), tobii_calibration_retrieve(), tobii_enumerate_illumination_modes(), 
+    or tobii_license_key_retrieve().
+    Calling tobii_eye_position_normalized_subscribe from within a callback function is not supported.
 
 ### See also
 
-tobii_gaze_origin_subscribe(), tobii_eye_position_normalized_unsubscribe(), tobii_process_callbacks(),
+tobii_gaze_origin_subscribe(), tobii_eye_position_normalized_unsubscribe(), tobii_device_process_callbacks(),
 tobii_system_clock()
 
 
@@ -2171,14 +2537,27 @@ tobii_system_clock()
         printf( "\n" );
     }
 
+    static void url_receiver( char const* url, void* user_data )
+    {
+        char* buffer = (char*)user_data;
+        if( *buffer != '\0' ) return; // only keep first value
+
+        if( strlen( url ) < 256 )
+            strcpy( buffer, url );
+    }
+
     int main()
     {
         tobii_api_t* api;
         tobii_error_t error = tobii_api_create( &api, NULL, NULL );
         assert( error == TOBII_ERROR_NO_ERROR );
 
+        char url[ 256 ] = { 0 };
+        error = tobii_enumerate_local_device_urls( api, url_receiver, url );
+        assert( error == TOBII_ERROR_NO_ERROR && *url != '\0' );
+
         tobii_device_t* device;
-        error = tobii_device_create( api, NULL, &device );
+        error = tobii_device_create( api, url, &device );
         assert( error == TOBII_ERROR_NO_ERROR );
 
         error = tobii_eye_position_normalized_subscribe( device, eye_position_callback, 0 );
@@ -2187,10 +2566,10 @@ tobii_system_clock()
         int is_running = 1000; // in this sample, exit after some iterations
         while( --is_running > 0 )
         {
-            error = tobii_wait_for_callbacks( device );
+            error = tobii_wait_for_callbacks( NULL, 1, &device );
             assert( error == TOBII_ERROR_NO_ERROR || error == TOBII_ERROR_TIMED_OUT );
 
-            error = tobii_process_callbacks( device );
+            error = tobii_device_process_callbacks( device );
             assert( error == TOBII_ERROR_NO_ERROR );
         }
 
@@ -2242,11 +2621,22 @@ fails, tobii_eye_position_normalized_unsubscribe returns one of the following:
     There was no subscription for normalized eye positions. It is only valid to call tobii_eye_position_normalized_unsubscribe()
     after first successfully calling tobii_eye_position_normalized_subscribe().
 
--   **TOBII_ERROR_INTERNAL**, **TOBII_ERROR_NOT_SUPPORTED**, **TOBII_ERROR_OPERATION_FAILED**	
+-   **TOBII_ERROR_NOT_SUPPORTED**
+
+    The device doesn't support the stream. This error is returned if the API is called with an old device and/or that is
+    running outdated firmware.
+
+-   **TOBII_ERROR_INTERNAL**
 
     Some unexpected internal error occurred. This error should normally not be returned, so if it is, please contact
     the support
 
+-   **TOBII_ERROR_CALLBACK_IN_PROGRESS**
+
+    The function failed because it was called from within a callback triggered from an API call such as 
+    tobii_device_process_callbacks(), tobii_calibration_retrieve(), tobii_enumerate_illumination_modes(), 
+    or tobii_license_key_retrieve().
+    Calling tobii_eye_position_normalized_unsubscribe from within a callback function is not supported.
 
 ### See also
 
@@ -2323,15 +2713,26 @@ fails, tobii_user_presence_subscribe returns one of the following:
     A subscription for presence data was already made. There can only be one callback registered at a time.
     To change to another callback, first call tobii_user_presence_unsubscribe().
 
--   **TOBII_ERROR_INTERNAL**, **TOBII_ERROR_NOT_SUPPORTED**, **TOBII_ERROR_OPERATION_FAILED**	
+-   **TOBII_ERROR_NOT_SUPPORTED**
+
+    The device doesn't support the stream. This error is returned if the API is called with an old device and/or that is
+    running outdated firmware.
+
+-   **TOBII_ERROR_INTERNAL**
 
     Some unexpected internal error occurred. This error should normally not be returned, so if it is, please contact
     the support
 
+-   **TOBII_ERROR_CALLBACK_IN_PROGRESS**
+
+    The function failed because it was called from within a callback triggered from an API call such as 
+    tobii_device_process_callbacks(), tobii_calibration_retrieve(), tobii_enumerate_illumination_modes(), 
+    or tobii_license_key_retrieve().
+    Calling tobii_user_presence_subscribe from within a callback function is not supported.
 
 ### See also
 
-tobii_user_presence_unsubscribe(), tobii_process_callbacks(), tobii_system_clock()
+tobii_user_presence_unsubscribe(), tobii_device_process_callbacks(), tobii_system_clock()
 
 
 ### Example
@@ -2357,14 +2758,27 @@ tobii_user_presence_unsubscribe(), tobii_process_callbacks(), tobii_system_clock
         }
     }
 
+    static void url_receiver( char const* url, void* user_data )
+    {
+        char* buffer = (char*)user_data;
+        if( *buffer != '\0' ) return; // only keep first value
+
+        if( strlen( url ) < 256 )
+            strcpy( buffer, url );
+    }
+
     int main()
     {
         tobii_api_t* api;
         tobii_error_t error = tobii_api_create( &api, NULL, NULL );
         assert( error == TOBII_ERROR_NO_ERROR );
 
+        char url[ 256 ] = { 0 };
+        error = tobii_enumerate_local_device_urls( api, url_receiver, url );
+        assert( error == TOBII_ERROR_NO_ERROR && *url != '\0' );
+
         tobii_device_t* device;
-        error = tobii_device_create( api, NULL, &device );
+        error = tobii_device_create( api, url, &device );
         assert( error == TOBII_ERROR_NO_ERROR );
 
         error = tobii_user_presence_subscribe( device, presence_callback, 0 );
@@ -2373,10 +2787,10 @@ tobii_user_presence_unsubscribe(), tobii_process_callbacks(), tobii_system_clock
         int is_running = 1000; // in this sample, exit after some iterations
         while( --is_running > 0 )
         {
-            error = tobii_wait_for_callbacks( device );
+            error = tobii_wait_for_callbacks( NULL, 1, &device );
             assert( error == TOBII_ERROR_NO_ERROR || error == TOBII_ERROR_TIMED_OUT );
 
-            error = tobii_process_callbacks( device );
+            error = tobii_device_process_callbacks( device );
             assert( error == TOBII_ERROR_NO_ERROR );
         }
 
@@ -2427,11 +2841,22 @@ fails, tobii_user_presence_unsubscribe returns one of the following:
     There was no subscription for presence. It is only valid to call tobii_user_presence_unsubscribe()
     after first successfully calling tobii_user_presence_subscribe().
 
--   **TOBII_ERROR_INTERNAL**, **TOBII_ERROR_NOT_SUPPORTED**, **TOBII_ERROR_OPERATION_FAILED**	
+-   **TOBII_ERROR_NOT_SUPPORTED**
+
+    The device doesn't support the stream. This error is returned if the API is called with an old device and/or that is
+    running outdated firmware.
+
+-   **TOBII_ERROR_INTERNAL**	
 
     Some unexpected internal error occurred. This error should normally not be returned, so if it is, please contact
     the support
 
+-   **TOBII_ERROR_CALLBACK_IN_PROGRESS**
+
+    The function failed because it was called from within a callback triggered from an API call such as 
+    tobii_device_process_callbacks(), tobii_calibration_retrieve(), tobii_enumerate_illumination_modes(), 
+    or tobii_license_key_retrieve().
+    Calling tobii_user_presence_unsubscribe from within a callback function is not supported.
 
 ### See also
 
@@ -2534,11 +2959,17 @@ fails, tobii_head_pose_subscribe returns one of the following:
     Head pose is not available as the software component responsible for providing it is not running. Head pose requires
     the Tobii Eye Tracking Core Software to be installed and running.
 
--   **TOBII_ERROR_INTERNAL**, **TOBII_ERROR_OPERATION_FAILED**	
+-   **TOBII_ERROR_INTERNAL**
 
     Some unexpected internal error occurred. This error should normally not be returned, so if it is, please contact
     the support.
 
+-   **TOBII_ERROR_CALLBACK_IN_PROGRESS**
+
+    The function failed because it was called from within a callback triggered from an API call such as 
+    tobii_device_process_callbacks(), tobii_calibration_retrieve(), tobii_enumerate_illumination_modes(), 
+    or tobii_license_key_retrieve().
+    Calling tobii_head_pose_subscribe from within a callback function is not supported.
 
 ### See also
 
@@ -2566,14 +2997,27 @@ tobii_head_pose_unsubscribe()
                 printf( "%f\n", head_pose->rotation_xyz[ i ] );
     }
 
+    static void url_receiver( char const* url, void* user_data )
+    {
+        char* buffer = (char*)user_data;
+        if( *buffer != '\0' ) return; // only keep first value
+
+        if( strlen( url ) < 256 )
+            strcpy( buffer, url );
+    }
+
     int main()
     {
         tobii_api_t* api;
         tobii_error_t error = tobii_api_create( &api, NULL, NULL );
         assert( error == TOBII_ERROR_NO_ERROR );
 
+        char url[ 256 ] = { 0 };
+        error = tobii_enumerate_local_device_urls( api, url_receiver, url );
+        assert( error == TOBII_ERROR_NO_ERROR && *url != '\0' );
+
         tobii_device_t* device;
-        error = tobii_device_create( api, NULL, &device );
+        error = tobii_device_create( api, url, &device );
         assert( error == TOBII_ERROR_NO_ERROR );
 
         error = tobii_head_pose_subscribe( device, head_pose_callback, 0 );
@@ -2582,10 +3026,10 @@ tobii_head_pose_unsubscribe()
         int is_running = 1000; // in this sample, exit after some iterations
         while( --is_running > 0 )
         {
-            error = tobii_wait_for_callbacks( device );
+            error = tobii_wait_for_callbacks( NULL, 1, &device );
             assert( error == TOBII_ERROR_NO_ERROR || error == TOBII_ERROR_TIMED_OUT );
 
-            error = tobii_process_callbacks( device );
+            error = tobii_device_process_callbacks( device );
             assert( error == TOBII_ERROR_NO_ERROR );
         }
 
@@ -2645,11 +3089,17 @@ fails, tobii_head_pose_unsubscribe returns one of the following:
 
     Head pose is not available as the software component responsible for providing it is not running.
 
--   **TOBII_ERROR_INTERNAL**, **TOBII_ERROR_OPERATION_FAILED**	
+-   **TOBII_ERROR_INTERNAL**
 
     Some unexpected internal error occurred. This error should normally not be returned, so if it is, please contact
     the support
 
+-   **TOBII_ERROR_CALLBACK_IN_PROGRESS**
+
+    The function failed because it was called from within a callback triggered from an API call such as 
+    tobii_device_process_callbacks(), tobii_calibration_retrieve(), tobii_enumerate_illumination_modes(), 
+    or tobii_license_key_retrieve().
+    Calling tobii_head_pose_unsubscribe from within a callback function is not supported.
 
 ### See also
 
@@ -2707,6 +3157,8 @@ following parameters:
         **TOBII_NOTIFICATION_TYPE_FRAMERATE_CHANGED**
         **TOBII_NOTIFICATION_TYPE_POWER_SAVE_STATE_CHANGED**
         **TOBII_NOTIFICATION_TYPE_DEVICE_PAUSED_STATE_CHANGED**
+        **TOBII_NOTIFICATION_TYPE_CALIBRATION_ENABLED_EYE_CHANGED**
+        **TOBII_NOTIFICATION_TYPE_COMBINED_GAZE_FACTOR_CHANGED**
 
     -   *value_type*
 
@@ -2716,6 +3168,7 @@ following parameters:
         **TOBII_NOTIFICATION_VALUE_TYPE_FLOAT**
         **TOBII_NOTIFICATION_VALUE_TYPE_STATE**
         **TOBII_NOTIFICATION_VALUE_TYPE_DISPLAY_AREA**
+        **TOBII_NOTIFICATION_VALUE_TYPE_ENABLED_EYE**
 
     -   *value*
 
@@ -2744,15 +3197,21 @@ fails, tobii_notifications_subscribe returns one of the following:
     A subscription for notifications were already made. There can only be one callback registered at a time.
     To change to another callback, first call tobii_notifications_unsubscribe().
 
--   **TOBII_ERROR_INTERNAL**, **TOBII_ERROR_NOT_SUPPORTED**, **TOBII_ERROR_OPERATION_FAILED**	
+-   **TOBII_ERROR_INTERNAL**
 
     Some unexpected internal error occurred. This error should normally not be returned, so if it is, please contact
     the support
 
+-   **TOBII_ERROR_CALLBACK_IN_PROGRESS**
+
+    The function failed because it was called from within a callback triggered from an API call such as 
+    tobii_device_process_callbacks(), tobii_calibration_retrieve(), tobii_enumerate_illumination_modes(), 
+    or tobii_license_key_retrieve().
+    Calling tobii_notifications_subscribe from within a callback function is not supported.
 
 ### See also
 
-tobii_notifications_unsubscribe(), tobii_process_callbacks()
+tobii_notifications_unsubscribe(), tobii_device_process_callbacks()
 
 
 ### Example
@@ -2776,14 +3235,27 @@ tobii_notifications_unsubscribe(), tobii_process_callbacks()
             printf( "Framerate changed\nNew framerate: %f\n", notification->value.float_ );
     }
 
+    static void url_receiver( char const* url, void* user_data )
+    {
+        char* buffer = (char*)user_data;
+        if( *buffer != '\0' ) return; // only keep first value
+
+        if( strlen( url ) < 256 )
+            strcpy( buffer, url );
+    }
+
     int main()
     {
         tobii_api_t* api;
         tobii_error_t error = tobii_api_create( &api, NULL, NULL );
         assert( error == TOBII_ERROR_NO_ERROR );
 
+        char url[ 256 ] = { 0 };
+        error = tobii_enumerate_local_device_urls( api, url_receiver, url );
+        assert( error == TOBII_ERROR_NO_ERROR && *url != '\0' );
+
         tobii_device_t* device;
-        error = tobii_device_create( api, NULL, &device );
+        error = tobii_device_create( api, url, &device );
         assert( error == TOBII_ERROR_NO_ERROR );
 
         error = tobii_notifications_subscribe( device, notifications_callback, 0 );
@@ -2792,10 +3264,10 @@ tobii_notifications_unsubscribe(), tobii_process_callbacks()
         int is_running = 1000; // in this sample, exit after some iterations
         while( --is_running > 0 )
         {
-            error = tobii_wait_for_callbacks( device );
+            error = tobii_wait_for_callbacks( NULL, 1, &device );
             assert( error == TOBII_ERROR_NO_ERROR || error == TOBII_ERROR_TIMED_OUT );
 
-            error = tobii_process_callbacks( device );
+            error = tobii_device_process_callbacks( device );
             assert( error == TOBII_ERROR_NO_ERROR );
         }
 
@@ -2846,11 +3318,17 @@ fails, tobii_notifications_unsubscribe returns one of the following:
     There was no subscription for notifications. It is only valid to call tobii_notifications_unsubscribe()
     after first successfully calling tobii_notifications_subscribe().
 
--   **TOBII_ERROR_INTERNAL**, **TOBII_ERROR_NOT_SUPPORTED**, **TOBII_ERROR_OPERATION_FAILED**	
+-   **TOBII_ERROR_INTERNAL**
 
     Some unexpected internal error occurred. This error should normally not be returned, so if it is, please contact
     the support
 
+-   **TOBII_ERROR_CALLBACK_IN_PROGRESS**
+
+    The function failed because it was called from within a callback triggered from an API call such as 
+    tobii_device_process_callbacks(), tobii_calibration_retrieve(), tobii_enumerate_illumination_modes(), 
+    or tobii_license_key_retrieve().
+    Calling tobii_notifications_unsubscribe from within a callback function is not supported.
 
 ### See also
 
@@ -2888,7 +3366,7 @@ Start listening for eye tracking data from wearable device, such as VR headsets.
 
 ### Remarks
 
-All coordinates are expressed in a left-handed Cartesian system.
+All coordinates are expressed in a right-handed Cartesian system.
 
 *device* must be a pointer to a valid tobii_device_t instance as created by calling tobii_device_create or 
 tobii_device_create_ex.
@@ -2931,7 +3409,7 @@ This function will be called when there is new data available. It is called with
 
         -   *gaze_origin_mm_xyz*
             An array of three floats, for the x, y and z coordinate of the point in the user's eye from which the calculated
-            gaze ray originates, expressed in a left-handed Cartesian coordinate system. See the wearable hardware specification
+            gaze ray originates, expressed in a right-handed Cartesian coordinate system. See the wearable hardware specification
             for its origin.
 
         -   *gaze_direction_validity*
@@ -2940,7 +3418,7 @@ This function will be called when there is new data available. It is called with
 
         -   *gaze_direction_normalized_xyz*
             An array of three floats, for the x, y and z coordinate of the gaze direction of the eye of the user, expressed
-            as a unit vector in a left-handed Cartesian coordinate system.
+            as a unit vector in a right-handed Cartesian coordinate system.
 
         -   *pupil_diameter_validity*
             **TOBII_VALIDITY_INVALID** if *pupil_diameter_mm* is not valid for this frame, **TOBII_VALIDITY_VALID** if it is.
@@ -2991,15 +3469,25 @@ fails, tobii_wearable_data_subscribe returns one of the following:
     A subscription for wearable data were already made. There can only be one callback registered at a time.
     To change to another callback, first call tobii_wearable_data_unsubscribe().
 
--   **TOBII_ERROR_INTERNAL**, **TOBII_ERROR_NOT_SUPPORTED**, **TOBII_ERROR_OPERATION_FAILED**	
+-   **TOBII_ERROR_NOT_SUPPORTED**
+
+    The device doesn't support the stream. This error is returned if the API is called with a non-VR device.
+
+-   **TOBII_ERROR_INTERNAL**
 
     Some unexpected internal error occurred. This error should normally not be returned, so if it is, please contact
     the support.
 
+-   **TOBII_ERROR_CALLBACK_IN_PROGRESS**
+
+    The function failed because it was called from within a callback triggered from an API call such as 
+    tobii_device_process_callbacks(), tobii_calibration_retrieve(), tobii_enumerate_illumination_modes(), 
+    or tobii_license_key_retrieve().
+    Calling tobii_wearable_data_subscribe from within a callback function is not supported.
 
 ### See also
 
-tobii_wearable_data_unsubscribe(), tobii_process_callbacks()
+tobii_wearable_data_unsubscribe(), tobii_device_process_callbacks()
 
 
 ### Example
@@ -3033,14 +3521,27 @@ tobii_wearable_data_unsubscribe(), tobii_process_callbacks()
             printf( "Right gaze direction: INVALID\n" );
     }
 
+    static void url_receiver( char const* url, void* user_data )
+    {
+        char* buffer = (char*)user_data;
+        if( *buffer != '\0' ) return; // only keep first value
+
+        if( strlen( url ) < 256 )
+            strcpy( buffer, url );
+    }
+
     int main()
     {
         tobii_api_t* api;
         tobii_error_t error = tobii_api_create( &api, NULL, NULL );
         assert( error == TOBII_ERROR_NO_ERROR );
 
+        char url[ 256 ] = { 0 };
+        error = tobii_enumerate_local_device_urls( api, url_receiver, url );
+        assert( error == TOBII_ERROR_NO_ERROR && *url != '\0' );
+
         tobii_device_t* device;
-        error = tobii_device_create( api, NULL, &device );
+        error = tobii_device_create( api, url, &device );
         assert( error == TOBII_ERROR_NO_ERROR );
 
         error = tobii_wearable_data_subscribe( device, wearable_callback, 0 );
@@ -3049,10 +3550,10 @@ tobii_wearable_data_unsubscribe(), tobii_process_callbacks()
         int is_running = 1000; // in this sample, exit after some iterations
         while( --is_running > 0 )
         {
-            error = tobii_wait_for_callbacks( device );
+            error = tobii_wait_for_callbacks( NULL, 1, &device );
             assert( error == TOBII_ERROR_NO_ERROR || error == TOBII_ERROR_TIMED_OUT );
 
-            error = tobii_process_callbacks( device );
+            error = tobii_device_process_callbacks( device );
             assert( error == TOBII_ERROR_NO_ERROR );
         }
 
@@ -3104,11 +3605,22 @@ fails, tobii_wearable_data_unsubscribe returns one of the following:
     There was no subscription for wearable data. It is only valid to call tobii_wearable_data_unsubscribe()
     after first successfully calling tobii_wearable_data_subscribe().
 
--   **TOBII_ERROR_INTERNAL**, **TOBII_ERROR_NOT_SUPPORTED**, **TOBII_ERROR_OPERATION_FAILED**	
+-   **TOBII_ERROR_NOT_SUPPORTED**
+
+    The device doesn't support the stream. This error is returned if the API is called with an old device and/or that is
+    running outdated firmware.
+
+-   **TOBII_ERROR_INTERNAL**
 
     Some unexpected internal error occurred. This error should normally not be returned, so if it is, please contact
     the support
 
+-   **TOBII_ERROR_CALLBACK_IN_PROGRESS**
+
+    The function failed because it was called from within a callback triggered from an API call such as 
+    tobii_device_process_callbacks(), tobii_calibration_retrieve(), tobii_enumerate_illumination_modes(), 
+    or tobii_license_key_retrieve().
+    Calling tobii_wearable_data_unsubscribe from within a callback function is not supported.
 
 ### See also
 
@@ -3155,16 +3667,25 @@ fails, tobii_get_lens_configuration returns one of the following:
 
     The *device* or *lens_config* parameter was passed in as NULL. 
 
--   **TOBII_ERROR_CONNECTION_FAILED**, **TOBII_ERROR_FIRMWARE_NO_RESPONSE**
+-   **TOBII_ERROR_CONNECTION_FAILED**
 
-    The connection to the device was lost. Call tobii_reconnect() to re-establish connection.
+    The connection to the device was lost. Call tobii_device_reconnect() to re-establish connection.
 
--   **TOBII_ERROR_INTERNAL**, **TOBII_ERROR_NOT_SUPPORTED**, **TOBII_ERROR_OPERATION_FAILED**	
+-   **TOBII_ERROR_NOT_SUPPORTED**
+
+    The device doesn't support this functionality. This error is returned if the API is called with a non-VR device.
+
+-   **TOBII_ERROR_INTERNAL**
 
     Some unexpected internal error occurred. This error should normally not be returned, so if it is, please contact
     the support.
 
+-   **TOBII_ERROR_CALLBACK_IN_PROGRESS**
 
+    The function failed because it was called from within a callback triggered from an API call such as 
+    tobii_device_process_callbacks(), tobii_calibration_retrieve(), tobii_enumerate_illumination_modes(), 
+    or tobii_license_key_retrieve().
+    Calling tobii_get_lens_configuration from within a callback function is not supported.
 
 ### See also
 
@@ -3177,14 +3698,27 @@ tobii_set_lens_configuration()
     #include <stdio.h>
     #include <assert.h>
 
+    static void url_receiver( char const* url, void* user_data )
+    {
+        char* buffer = (char*)user_data;
+        if( *buffer != '\0' ) return; // only keep first value
+
+        if( strlen( url ) < 256 )
+            strcpy( buffer, url );
+    }
+
     int main()
     {
         tobii_api_t* api;
         tobii_error_t error = tobii_api_create( &api, NULL, NULL );
         assert( error == TOBII_ERROR_NO_ERROR );
 
+        char url[ 256 ] = { 0 };
+        error = tobii_enumerate_local_device_urls( api, url_receiver, url );
+        assert( error == TOBII_ERROR_NO_ERROR && *url != '\0' );
+
         tobii_device_t* device;
-        error = tobii_device_create( api, NULL, &device );
+        error = tobii_device_create( api, url, &device );
         assert( error == TOBII_ERROR_NO_ERROR );
 
         tobii_lens_configuration_t lens_config;
@@ -3255,14 +3789,25 @@ fails, tobii_get_lens_configuration returns one of the following:
 
     The provided license does not permit this operation.
 
--   **TOBII_ERROR_CONNECTION_FAILED**, **TOBII_ERROR_FIRMWARE_NO_RESPONSE**
+-   **TOBII_ERROR_NOT_SUPPORTED**
 
-    The connection to the device was lost. Call tobii_reconnect() to re-establish connection.
+    The device doesn't support this functionality. This error is returned if the API is called with a non-VR device.
 
--   **TOBII_ERROR_INTERNAL**, **TOBII_ERROR_NOT_SUPPORTED**, **TOBII_ERROR_OPERATION_FAILED**	
+-   **TOBII_ERROR_CONNECTION_FAILED**
+
+    The connection to the device was lost. Call tobii_device_reconnect() to re-establish connection.
+
+-   **TOBII_ERROR_INTERNAL**
 
     Some unexpected internal error occurred. This error should normally not be returned, so if it is, please contact
     the support.
+
+-   **TOBII_ERROR_CALLBACK_IN_PROGRESS**
+
+    The function failed because it was called from within a callback triggered from an API call such as 
+    tobii_device_process_callbacks(), tobii_calibration_retrieve(), tobii_enumerate_illumination_modes(), 
+    or tobii_license_key_retrieve().
+    Calling tobii_set_lens_configuration from within a callback function is not supported.
 
 
 ### See also
@@ -3276,14 +3821,27 @@ tobii_get_lens_configuration()
     #include <stdio.h>
     #include <assert.h>
 
+    static void url_receiver( char const* url, void* user_data )
+    {
+        char* buffer = (char*)user_data;
+        if( *buffer != '\0' ) return; // only keep first value
+
+        if( strlen( url ) < 256 )
+            strcpy( buffer, url );
+    }
+
     int main()
     {
         tobii_api_t* api;
         tobii_error_t error = tobii_api_create( &api, NULL, NULL );
         assert( error == TOBII_ERROR_NO_ERROR );
 
+        char url[ 256 ] = { 0 };
+        error = tobii_enumerate_local_device_urls( api, url_receiver, url );
+        assert( error == TOBII_ERROR_NO_ERROR && *url != '\0' );
+
         tobii_device_t* device;
-        error = tobii_device_create( api, NULL, &device );
+        error = tobii_device_create( api, url, &device );
         assert( error == TOBII_ERROR_NO_ERROR );
 
         tobii_lens_configuration_writable_t writable;
@@ -3356,11 +3914,204 @@ fails, tobii_lens_configuration_writable returns one of the following:
 
     The *device* or *writable* parameter was passed in as NULL. 
 
--   **TOBII_ERROR_CONNECTION_FAILED**, **TOBII_ERROR_FIRMWARE_NO_RESPONSE**
+-   **TOBII_ERROR_CONNECTION_FAILED**
 
-    The connection to the device was lost. Call tobii_reconnect() to re-establish connection.
+    The connection to the device was lost. Call tobii_device_reconnect() to re-establish connection.
 
--   **TOBII_ERROR_INTERNAL**, **TOBII_ERROR_NOT_SUPPORTED**, **TOBII_ERROR_OPERATION_FAILED**	
+-   **TOBII_ERROR_INTERNAL**
+
+    Some unexpected internal error occurred. This error should normally not be returned, so if it is, please contact
+    the support.
+
+-   **TOBII_ERROR_CALLBACK_IN_PROGRESS**
+
+    The function failed because it was called from within a callback triggered from an API call such as 
+    tobii_device_process_callbacks(), tobii_calibration_retrieve(), tobii_enumerate_illumination_modes(), 
+    or tobii_license_key_retrieve().
+    Calling tobii_lens_configuration_writable from within a callback function is not supported.
+
+### See also
+
+tobii_get_lens_configuration(), tobii_set_lens_configuration()
+
+
+
+tobii_engine.h
+===============
+
+The tobii_engine.h header file is used for acquiring information about connected devices. It creates a dedicated
+connection to the tobii engine, which runs as a service/daemon depending on the operating system. Using this interface
+the user can subscribe to events about added and removed tracker devices, as well as changes in individual tracker
+readiness states. The readiness states gives the user information about which readiness state the tracker is currently
+in, i.e. if a firmware upgrade is in progress, a calibration is needed or if the tracker is ready for use.
+
+Please note that there can only be one subscription callback registered to a stream at a time,
+i.e the tobii_device_list_change_subscribe. To register a new callback, first unsubscribe from the stream, then
+resubscribe with the new callback function.
+
+Do NOT call StreamEngine API functions from within the callback functions, due to risk of internal deadlocks. Generally
+one should finish the callback functions as quickly as possible and not make any blocking calls.
+
+
+tobii_engine_create
+--------------------------
+
+### Function
+
+Creates a device instance to be used for communicating with a specific device.
+
+
+### Syntax
+
+    #include <tobii/tobii_engine.h>
+    tobii_error_t TOBII_CALL tobii_engine_create( tobii_api_t* api, tobii_engine_t** engine );
+
+
+### Remarks
+
+Stream engine establishes a communication channel to the engine and keeps track of internal states, tobii_engine_create
+allocates and initializes this state and establishes the connection. This connection can then be used to query the
+engine for more information about which trackers are connected to the system.
+
+*api* must be a pointer to a valid tobii_api_t as created by calling tobii_api_create.
+
+*engine* must be a pointer to a variable of the type `tobii_engine_t*` that is, a pointer to a
+tobii_engine_t-pointer. This variable will be filled in with a pointer to the created engine instance.
+tobii_engine_t is an opaque type.
+
+
+### Return value
+
+If the engine is successfully created, tobii_engine_create returns **TOBII_ERROR_NO_ERROR**. If the call fails,
+tobii_engine_create returns one of the following:
+
+-   **TOBII_ERROR_INVALID_PARAMETER**
+
+    The *api* or *engine* parameters were passed in as NULL.
+
+-   **TOBII_ERROR_ALLOCATION_FAILED**
+
+    The internal call to malloc or to the custom memory allocator (if used) returned NULL, so engine creation failed.
+
+-   **TOBII_ERROR_NOT_AVAILABLE**
+
+    A connection to the tobii engine could not be established. This error is returned if the tobii engine is not
+    running, not installed on the system or if it is an older version of tobii engine.
+
+-   **TOBII_ERROR_INTERNAL**
+
+    Some unexpected internal error occurred. This error should normally not be returned, so if it is, please contact
+    the support
+
+
+### See also
+
+tobii_engine_destroy(), tobii_api_create()
+
+
+### Example
+
+
+    #include <tobii/tobii.h>
+    #include <tobii/tobii_engine.h>
+    #include <stdio.h>
+    #include <assert.h>
+
+    void device_list_change_callback( char const* url, tobii_device_list_change_type_t type,
+        tobii_device_readiness_t readiness, int64_t timestamp_us, void* user_data )
+    {
+        (void)readiness; (void)timestamp_us; (void) user_data;
+        switch( type )
+        {
+            case TOBII_DEVICE_LIST_CHANGE_TYPE_ADDED:
+                printf( "A device with url:%s, has been added\n", url );
+                break;
+            case TOBII_DEVICE_LIST_CHANGE_TYPE_REMOVED:
+                printf( "The device with url:%s, has been removed\n", url );
+                break;
+            case TOBII_DEVICE_LIST_CHANGE_TYPE_CHANGED:
+                printf( "Readiness state changed for device with url:%s\n", url );
+                break;
+            default:
+                printf( "Unknow device list change type\n" );
+                break;
+        }
+    }
+
+    int main()
+    {
+        tobii_api_t* api;
+        tobii_error_t error = tobii_api_create( &api, NULL, NULL );
+        assert( error == TOBII_ERROR_NO_ERROR );
+
+        tobii_engine_t* engine;
+        error = tobii_engine_create( api, &engine );
+        assert( error == TOBII_ERROR_NO_ERROR );
+
+        error = tobii_device_list_change_subscribe( engine, device_list_change_callback, 0 );
+        assert( error == TOBII_ERROR_NO_ERROR );
+
+        int is_running = 1000; // in this sample, exit after some iterations
+        while( --is_running > 0 )
+        {
+            error = tobii_wait_for_callbacks( engine, 0, NULL );
+            assert( error == TOBII_ERROR_NO_ERROR || error == TOBII_ERROR_TIMED_OUT );
+
+            error = tobii_engine_process_callbacks( engine );
+            assert( error == TOBII_ERROR_NO_ERROR );
+        }
+
+        error = tobii_device_list_change_unsubscribe( engine );
+        assert( error == TOBII_ERROR_NO_ERROR );
+
+        error = tobii_engine_destroy( engine );
+        assert( error == TOBII_ERROR_NO_ERROR );
+
+        error = tobii_api_destroy( api );
+        assert( error == TOBII_ERROR_NO_ERROR );
+        return 0;
+    }
+
+
+
+
+tobii_engine_destroy
+----------------------------
+
+### Function
+
+Destroy an engine previously created through a call to tobii_engine_create.
+
+
+### Syntax
+
+    #include <tobii/tobii_engine.h>
+    tobii_error_t tobii_engine_destroy( tobii_engine_t* engine );
+
+
+### Remarks
+
+tobii_engine_destroy disconnects from the engine, perform cleanup and free the memory allocated by calling
+tobii_engine_create.
+
+**NOTE:** Make sure that no background thread is using the engine, for example in the thread calling
+tobii_engine_process_callbacks, before calling tobii_engine_destroy in order to avoid the risk of encountering undefined
+behavior.
+
+*engine* must be a pointer to a valid tobii_engine_t instance as created by calling tobii_engine_create or
+tobii_engine_create_ex.
+
+
+### Return value
+
+If the engine was successfully destroyed, tobii_engine_destroy returns **TOBII_ERROR_NO_ERROR**. If the call fails,
+tobii_engine_destroy returns one of the following:
+
+-   **TOBII_ERROR_INVALID_PARAMETER**
+
+    The *engine* parameter was passed in as NULL.
+
+-   **TOBII_ERROR_INTERNAL**
 
     Some unexpected internal error occurred. This error should normally not be returned, so if it is, please contact
     the support.
@@ -3368,5 +4119,546 @@ fails, tobii_lens_configuration_writable returns one of the following:
 
 ### See also
 
-tobii_get_lens_configuration(), tobii_set_lens_configuration()
+tobii_engine_create()
+
+
+### Example
+
+See tobii_engine_create()
+
+
+
+tobii_engine_reconnect
+---------------
+
+### Function
+
+Establish a new connection after a disconnect.
+
+
+### Syntax
+
+    #include <tobii/tobii_engine.h>
+    tobii_error_t tobii_engine_reconnect( tobii_engine_t* engine );
+
+
+### Remarks
+
+When receiving the error code TOBII_ERROR_CONNECTION_FAILED, it is necessary to explicitly request reconnection, by
+calling tobii_engine_reconnect.
+
+*engine* must be a pointer to a valid tobii_engine_t instance as created by calling tobii_engine_create.
+
+
+### Return value
+
+-   **TOBII_ERROR_INVALID_PARAMETER**
+
+    The *engine* parameter was passed in as NULL.
+
+-   **TOBII_ERROR_CONNECTION_FAILED**
+
+    When attempting to reconnect, a connection could not be established. You might want to wait for a bit and try again,
+    for a few times, and if the problem persists, display a message for the user.
+
+-   **TOBII_ERROR_INTERNAL**
+
+    Some unexpected internal error occurred. This error should normally not be returned, so if it is, please contact
+    the support.
+
+
+### See also
+
+tobii_engine_process_callbacks()
+
+
+### Example
+
+See tobii_engine_process_callbacks()
+
+
+
+tobii_engine_process_callbacks
+------------------------------
+
+### Function
+
+Receives data packages from the engine, and sends the data through any registered callbacks.
+
+
+### Syntax
+
+    #include <tobii/tobii_engine.h>
+    tobii_error_t tobii_engine_process_callbacks( tobii_engine_t* engine );
+
+
+### Remarks
+
+Stream engine does not do any kind of background processing, it doesn't start any threads. It doesn't use any
+asynchronous callbacks. This means that in order to receive data from the engine, the application needs to manually
+request the callbacks to happen synchronously, and this is done by calling tobii_engine_process_callbacks.
+
+tobii_engine_process_callbacks will receive any data packages that are incoming from the engine, process them and call any
+subscribed callbacks with the data. No callbacks will be called outside of tobii_engine_process_callbacks, so the application
+have full control over when to receive callbacks.
+
+tobii_engine_process_callbacks will not wait for data, and will early-out if there's nothing to process. In order to maintain
+the connection to the engine, tobii_engine_process_callbacks should be called at least 10 times per second.
+
+The recommended way to use tobii_engine_process_callbacks, is to start a dedicated thread, and alternately call
+tobii_wait_for_callbacks and tobii_engine_process_callbacks. See tobii_wait_for_callbacks() for more details.
+
+If there is already a suitable thread to regularly run tobii_engine_process_callbacks from (possibly interleaved with
+application specific operations), it is possible to do this without calling tobii_wait_for_callbacks(). In this
+scenario, time synchronization needs to be handled manually or the timestamps will start drifting. See
+tobii_update_timesync() for more details.
+
+*engine* must be a pointer to a valid tobii_engine_t instance as created by calling tobii_engine_create.
+
+### Return value
+
+If the operation is successful, tobii_engine_process_callbacks returns **TOBII_ERROR_NO_ERROR**. If the call fails,
+tobii_engine_process_callbacks returns one of the following:
+
+-   **TOBII_ERROR_INVALID_PARAMETER**
+
+    The *engine* parameter was passed in as NULL.
+
+-   **TOBII_ERROR_ALLOCATION_FAILED**
+
+    The internal call to malloc or to the custom memory allocator (if used) returned NULL, so engine creation failed.
+
+-   **TOBII_ERROR_CONNECTION_FAILED**
+
+    The connection to the tobii engine was lost. Call tobii_engine_reconnect() to re-establish connection.
+
+-   **TOBII_ERROR_INTERNAL**
+
+    Some unexpected internal error occurred. This error should normally not be returned, so if it is, please contact
+    the support.
+
+
+### See also
+
+tobii_wait_for_callbacks(), tobii_engine_clear_callback_buffers(), tobii_engine_reconnect(), tobii_update_timesync()
+
+
+### Example
+
+
+    #include <tobii/tobii.h>
+    #include <tobii/tobii_engine.h>
+    #include <stdio.h>
+    #include <assert.h>
+
+    int main()
+    {
+        tobii_api_t* api;
+        tobii_error_t error = tobii_api_create( &api, NULL, NULL );
+        assert( error == TOBII_ERROR_NO_ERROR );
+
+        tobii_engine_t* engine;
+        error = tobii_engine_create( api, &engine );
+        assert( error == TOBII_ERROR_NO_ERROR );
+
+        int is_running = 1000; // in this sample, exit after some iterations
+        while( --is_running > 0 )
+        {
+            // other parts of main loop would be executed here
+
+            error = tobii_engine_process_callbacks( engine );
+            assert( error == TOBII_ERROR_NO_ERROR );
+        }
+
+        error = tobii_engine_destroy( engine );
+        assert( error == TOBII_ERROR_NO_ERROR );
+
+        error = tobii_api_destroy( api );
+        assert( error == TOBII_ERROR_NO_ERROR );
+
+        return 0;
+    }
+
+
+
+
+tobii_engine_clear_callback_buffers
+----------------------------
+
+### Function
+
+Removes all unprocessed entries from the callback queues.
+
+
+### Syntax
+
+    #include <tobii/tobii_engine.h>
+    tobii_error_t tobii_engine_clear_callback_buffers( tobii_engine_t* engine );
+
+
+### Remarks
+
+All the data that is received and processed are written into internal buffers used for the callbacks. In some
+circumstances, for example during initialization, you might want to discard any data that has been buffered but not
+processed, without having to destroy/recreate the engine, and without having to implement the filtering out of unwanted
+data. tobii_engine_clear_callback_buffers will clear all buffered data, and only data arriving *after* the call to
+tobii_engine_clear_callback_buffers will be forwarded to callbacks.
+
+*engine* must be a pointer to a valid tobii_engine_t instance as created by calling tobii_engine_create.
+
+
+### Return value
+
+If the operation is successful, tobii_engine_clear_callback_buffers returns **TOBII_ERROR_NO_ERROR**. If the call fails,
+tobii_engine_clear_callback_buffers returns one of the following:
+
+-   **TOBII_ERROR_INVALID_PARAMETER**
+
+    The *engine* parameter was passed in as NULL.
+
+
+### See also
+
+tobii_wait_for_callbacks(), tobii_engine_process_callbacks()
+
+
+
+tobii_enumerate_devices
+---------------------------------
+
+### Function
+
+Retrieves information about trackers that are currently connected to the system.
+
+
+### Syntax
+
+    #include <tobii/tobii_engine.h>
+    tobii_error_t tobii_enumerate_devices( tobii_engine_t* engine,
+        tobii_enumerated_device_receiver_t receiver, void* user_data );
+
+
+### Remarks
+
+A system might have multiple devices connected, which the stream engine is able to communicate with.
+tobii_enumerate_devices retrives a list of all such devices found and their respective readiness state.
+It will only list locally connected devices, not devices connected on the network.
+
+*engine* must be a pointer to a valid tobii_engine_t instance as created by calling tobii_engine_create.
+
+*receiver* is a function pointer to a function with the prototype:
+
+    void enumerated_device_receiver( tobii_enumerated_device_t const* enumerated_device, void* user_data );
+
+This function will be called for each device found during enumeration. It is called with the following parameters:
+
+-   *enumerated_devices*
+    This is a pointer to a struct containing the following data:
+
+    -   *url*
+        The URL for the device, zero terminated ASCII string.
+
+    -   *serial_number*
+        The serial number of the device, zero terminated ASCII string.
+
+    -   *model*
+        The model of the device, zero terminated ASCII string.
+
+    -   *generation*
+        The generation of the device, zero terminated ASCII string.
+
+    -   *firmware_version*
+        The firmware version of the device, zero terminated ASCII string.
+
+    -   *integration*
+        The integration type of the device, zero terminated ASCII string.
+
+    -   *readiness* is one of the enum values in tobii_device_readiness_t:
+
+        -   **TOBII_DEVICE_READINESS_WAITING_FOR_FIRMWARE_UPGRADE**
+
+            Is the device waiting for a firmware upgrade.
+
+        -   **TOBII_DEVICE_READINESS_UPGRADING_FIRMWARE**
+
+            Is the device in the process of upgrading firmware.
+
+        -   **TOBII_DEVICE_READINESS_WAITING_FOR_DISPLAY_AREA**
+
+            Is the device waiting for display area information, this requires the client to set the display area.
+
+        -   **TOBII_DEVICE_READINESS_WAITING_FOR_CALIBRATION**
+
+            Is the device waiting for a valid calibration, this requires the client to perform or set a calibration.
+
+        -   **TOBII_DEVICE_READINESS_CALIBRATING**
+
+            Is the device in the process of calibrating.
+
+        -   **TOBII_DEVICE_READINESS_READY**
+
+            Is the device ready for use by the client.
+
+        -   **TOBII_DEVICE_READINESS_PAUSED**
+
+            Is the device in a paused state, the tracker is disabled while in the paused state.
+
+        -   **TOBII_DEVICE_READINESS_MALFUNCTIONING**
+
+            Is the device in a malfunctioning state, the tracker can not be used when in this state.
+
+-   *user_data*
+    This is the custom pointer sent in to tobii_enumerate_devices.
+
+*user_data* custom pointer which will be passed unmodified to the receiver function.
+
+
+### Return value
+
+If the operation is successful, tobii_enumerate_devices returns **TOBII_ERROR_NO_ERROR**. If the call fails,
+tobii_enumerate_devices returns one of the following:
+
+-   **TOBII_ERROR_INVALID_PARAMETER**
+
+    The *api* or *receiver* parameters has been passed in as NULL.
+
+-   **TOBII_ERROR_NOT_SUPPORTED**
+
+    The tobii engine doesn't support the ability to list enumerated devices. This error is returned if the API is
+    called with an old tobii engine.
+
+-   **TOBII_ERROR_INTERNAL**
+
+    Some unexpected internal error occurred. This error should normally not be returned, so if it is, please contact
+    the support.
+
+
+### See also
+
+tobii_engine_create(), tobii_device_list_change_subscribe()
+
+
+### Example
+
+
+    #include <tobii/tobii.h>
+    #include <tobii/tobii_engine.h>
+    #include <stdio.h>
+    #include <assert.h>
+
+    void enumerated_device_receiver( tobii_enumerated_device_t const* enumerated_device, void* user_data )
+    {
+        int* count = (int*) user_data;
+        ++(*count);
+        printf( "%d. %s (%s)\n", *count, enumerated_device->model, enumerated_device->url );
+    }
+
+    int main()
+    {
+        tobii_api_t* api;
+        tobii_error_t error = tobii_api_create( &api, NULL, NULL );
+        assert( error == TOBII_ERROR_NO_ERROR );
+
+        tobii_engine_t* engine;
+        error = tobii_engine_create( api, &engine );
+        assert( error == TOBII_ERROR_NO_ERROR );
+
+        int count = 0;
+        error = tobii_enumerate_devices( engine, enumerated_device_receiver, &count );
+        if( error == TOBII_ERROR_NO_ERROR )
+            printf( "Found %d devices.\n", count );
+        else
+            printf( "Enumeration failed.\n" );
+
+        error = tobii_engine_destroy( engine );
+        assert( error == TOBII_ERROR_NO_ERROR );
+
+        error = tobii_api_destroy( api );
+        assert( error == TOBII_ERROR_NO_ERROR );
+
+        return 0;
+    }
+
+
+
+tobii_device_list_change_subscribe
+--------------------------
+
+### Function
+
+Start listening for connected device events.
+
+
+### Syntax
+
+    #include <tobii/tobii_engine.h>
+    tobii_error_t tobii_device_list_change_subscribe( tobii_engine_t* engine,
+        tobii_device_list_change_callback_t callback, void* user_data );
+
+
+### Remarks
+
+This subscription is for receiving information regarding state changes for connected devices. A device list change
+event is triggered when a device has been added, removed or the readiness state of a device have changed.
+
+*engine* must be a pointer to a valid tobii_engine_t instance as created by calling tobii_engine_create.
+
+*callback* is a function pointer to a function with the prototype:
+
+    void tobii_device_list_change_callback( char const* url, tobii_device_list_change_type_t type,
+        tobii_device_readiness_t readiness, int64_t timestamp_us, void* user_data );
+
+This function will be called when there is a change to the device list. It is called with the following parameters:
+
+-   *url*
+    The URL string for the device, zero terminated. This pointer will be invalid after returning from the function,
+    so ensure you make a copy of the string rather than storing the pointer directly.
+
+-   *type* is one of the enum values in tobii_device_list_change_type_t:
+
+    -   **TOBII_DEVICE_LIST_CHANGE_TYPE_ADDED**
+
+        The device has been added to the system.
+
+    -   **TOBII_DEVICE_LIST_CHANGE_TYPE_REMOVED**
+
+        The device has been removed from the system.
+
+    -   **TOBII_DEVICE_LIST_CHANGE_TYPE_CHANGED**
+
+        The device readiness state has changed.
+
+-   *readiness* is one of the enum values in tobii_device_readiness_t:
+
+    -   **TOBII_DEVICE_READINESS_WAITING_FOR_FIRMWARE_UPGRADE**
+
+        Is the device waiting for a firmware upgrade.
+
+    -   **TOBII_DEVICE_READINESS_UPGRADING_FIRMWARE**
+
+        Is the device in the process of upgrading firmware.
+
+    -   **TOBII_DEVICE_READINESS_WAITING_FOR_DISPLAY_AREA**
+
+        Is the device waiting for display area information, this requires the client to set the display area.
+
+    -   **TOBII_DEVICE_READINESS_WAITING_FOR_CALIBRATION**
+
+        Is the device waiting for a valid calibration, this requires the client to perform or set a calibration.
+
+    -   **TOBII_DEVICE_READINESS_CALIBRATING**
+
+        Is the device in the process of calibrating.
+
+    -   **TOBII_DEVICE_READINESS_READY**
+
+        Is the device ready for use by the client.
+
+    -   **TOBII_DEVICE_READINESS_PAUSED**
+
+        Is the device in a paused state, the tracker is disabled while in the paused state.
+
+    -   **TOBII_DEVICE_READINESS_MALFUNCTIONING**
+
+        Is the device in a malfunctioning state, the tracker can not be used when in this state.
+
+-   *timestamp_us*
+    Timestamp value for when the device list change event occurred, measured in microseconds (us). The epoch is
+    undefined, so these timestamps are only useful for calculating the time elapsed between a pair of values. The
+    function tobii_system_clock() can be used to retrieve a timestamp using the same clock and same relative values
+    as this timestamp.
+
+-   *user_data*
+    This is the custom pointer sent in when registering the callback.
+
+*user_data* custom pointer which will be passed unmodified to the callback.
+
+
+### Return value
+
+If the operation is successful, tobii_device_list_change_subscribe returns **TOBII_ERROR_NO_ERROR**. If the call
+fails, tobii_device_list_change_subscribe returns one of the following:
+
+-   **TOBII_ERROR_INVALID_PARAMETER**
+
+    The *engine* or *callback* parameters were passed in as NULL.
+
+-   **TOBII_ERROR_ALREADY_SUBSCRIBED**
+
+    A subscription for device list changes were already made. There can only be one callback registered at a time.
+    To change to another callback, first call tobii_device_list_change_unsubscribe().
+
+-   **TOBII_ERROR_NOT_SUPPORTED**
+
+    The tobii engine doesn't support the stream. This error is returned if the API is called with an old tobii engine.
+
+-   **TOBII_ERROR_INTERNAL**
+
+    Some unexpected internal error occurred. This error should normally not be returned, so if it is, please contact
+    the support
+
+
+### See also
+
+tobii_device_list_change_unsubscribe(), tobii_engine_process_callbacks(), tobii_system_clock()
+
+
+### Example
+
+See tobii_engine_create()
+
+
+
+tobii_device_list_change_unsubscribe
+----------------------------
+
+### Function
+
+Stops listening to gaze point stream that was subscribed to by a call to tobii_gaze_point_subscribe()
+
+
+### Syntax
+
+    #include <tobii/tobii_engine.h>
+    tobii_error_t tobii_device_list_change_unsubscribe( tobii_engine_t* engine );
+
+
+### Remarks
+
+*engine* must be a pointer to a valid tobii_engine_t instance as created by calling tobii_engine_create.
+
+
+### Return value
+
+If the operation is successful, tobii_device_list_change_unsubscribe returns **TOBII_ERROR_NO_ERROR**. If the call
+fails, tobii_device_list_change_unsubscribe returns one of the following:
+
+-   **TOBII_ERROR_INVALID_PARAMETER**
+
+    The *engine* parameter was passed in as NULL.
+
+-   **TOBII_ERROR_NOT_SUBSCRIBED**
+
+    There was no subscription for device list changes. It is only valid to call tobii_device_list_change_unsubscribe()
+    after first successfully calling tobii_device_list_change_subscribe().
+
+-   **TOBII_ERROR_NOT_SUPPORTED**
+
+    The tobii engine doesn't support the stream. This error is returned if the API is called with an old tobii engine.
+
+-   **TOBII_ERROR_INTERNAL**
+
+    Some unexpected internal error occurred. This error should normally not be returned, so if it is, please contact
+    the support
+
+
+### See also
+
+tobii_gaze_point_subscribe()
+
+
+### Example
+
+See tobii_engine_create()
+
 
