@@ -68,8 +68,8 @@ static auto reconnect( tobii_device_t* device )
     // Try reconnecting for 10 seconds before giving up
     for( int i = 0; i < 40; ++i )
     {
-        auto error = tobii_reconnect( device );
-        if( error != TOBII_ERROR_CONNECTION_FAILED && error != TOBII_ERROR_FIRMWARE_NO_RESPONSE ) return error;
+        auto error = tobii_device_reconnect( device );
+        if( error != TOBII_ERROR_CONNECTION_FAILED ) return error;
         std::this_thread::sleep_for( std::chrono::milliseconds( 250 ) );
     }
 
@@ -118,11 +118,11 @@ int background_thread_sample_main()
             while( !exit_thread )
             {
                 // Do a timed blocking wait for new gaze data, will time out after some hundred milliseconds
-                auto error = tobii_wait_for_callbacks( device );
+                auto error = tobii_wait_for_callbacks( NULL, 1, &device );
 
                 if( error == TOBII_ERROR_TIMED_OUT ) continue; // If timed out, redo the wait for callbacks call
 
-                if( error == TOBII_ERROR_CONNECTION_FAILED || error == TOBII_ERROR_FIRMWARE_NO_RESPONSE )
+                if( error == TOBII_ERROR_CONNECTION_FAILED )
                 {
                     // Block here while attempting reconnect, if it fails, exit the thread
                     error = reconnect( device );
@@ -139,9 +139,9 @@ int background_thread_sample_main()
                     return;
                 }
                 // Calling this function will execute the subscription callback functions
-                error = tobii_process_callbacks( device );
+                error = tobii_device_process_callbacks( device );
 
-                if( error == TOBII_ERROR_CONNECTION_FAILED || error == TOBII_ERROR_FIRMWARE_NO_RESPONSE )
+                if( error == TOBII_ERROR_CONNECTION_FAILED )
                 {
                     // Block here while attempting reconnect, if it fails, exit the thread
                     error = reconnect( device );
@@ -154,7 +154,7 @@ int background_thread_sample_main()
                 }
                 else if( error != TOBII_ERROR_NO_ERROR )
                 {
-                    std::cerr << "tobii_process_callbacks failed: " << tobii_error_message( error ) << "." << std::endl;
+                    std::cerr << "tobii_device_process_callbacks failed: " << tobii_error_message( error ) << "." << std::endl;
                     return;
                 }
             }
@@ -169,7 +169,7 @@ int background_thread_sample_main()
                     << ", " << gaze_point->position_xy[ 1 ] << std::endl;
             else
                 std::cout << "Gaze point: " << gaze_point->timestamp_us << " INVALID" << std::endl;
-        }, 0 );
+        }, nullptr );
     if( error != TOBII_ERROR_NO_ERROR )
     {
         std::cerr << "Failed to subscribe to gaze stream." << std::endl;

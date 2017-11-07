@@ -135,7 +135,7 @@ static DWORD WINAPI reconnect_and_timesync_thread( LPVOID param )
         {
             tobii_error_t error;
             // Run reconnect loop until connection succeeds or the exit event occurs
-            while( ( error = tobii_reconnect( context->device ) ) != TOBII_ERROR_NO_ERROR )
+            while( ( error = tobii_device_reconnect( context->device ) ) != TOBII_ERROR_NO_ERROR )
             {
                 if( error != TOBII_ERROR_CONNECTION_FAILED )
                     fprintf( stderr, "Reconnection failed: %s.\n", tobii_error_message( error ) );
@@ -289,9 +289,10 @@ int wearable_game_loop_sample_main( void )
         // Only enter the next code section if not in reconnecting state
         if( !InterlockedCompareExchange( &thread_context.is_reconnecting, 0L, 0L ) )
         {
-            error = tobii_process_callbacks( device );
+            error = tobii_device_process_callbacks( device );
+            // TODO: Handle device_error
 
-            if( error == TOBII_ERROR_CONNECTION_FAILED || error == TOBII_ERROR_FIRMWARE_NO_RESPONSE )
+            if( error == TOBII_ERROR_CONNECTION_FAILED )
             {
                 // Change state and signal that reconnect is needed.
                 InterlockedExchange( &thread_context.is_reconnecting, 1L );
@@ -299,7 +300,7 @@ int wearable_game_loop_sample_main( void )
             }
             else if( error != TOBII_ERROR_NO_ERROR )
             {
-                fprintf( stderr, "tobii_process_callbacks failed: %s.\n", tobii_error_message( error ) );
+                fprintf( stderr, "tobii_device_process_callbacks failed: %s.\n", tobii_error_message( error ) );
                 break;
             }
 
