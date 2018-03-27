@@ -1619,7 +1619,6 @@ will be returned:
     }
 
 
-uint32_t* value );
 
 tobii_get_state_uint32
 --------------------
@@ -1631,9 +1630,9 @@ Gets the current value of a state in the tracker.
 
 ### Syntax
 
-#include <tobii/tobii.h>
-tobii_error_t tobii_get_state_uint32( tobii_device_t* device, tobii_state_t state,
-uint32_t* value );
+    #include <tobii/tobii.h>
+    tobii_error_t tobii_get_state_uint32( tobii_device_t* device, tobii_state_t state,
+        uint32_t* value );
 
 
 ### Remarks
@@ -1645,7 +1644,7 @@ tobii_device_create_ex.
 
 -   **TOBII_STATE_CALIBRATION_ID**
 
-Is the unique value identifying the calibration blob. 0 value indicates default calibration/no calibration done.
+    Is the unique value identifying the calibration blob. 0 value indicates default calibration/no calibration done.
 
 *value* must be a pointer to a valid uint32 instance. On success, *value* will be set to id of the calibration blob.
 
@@ -1660,12 +1659,12 @@ will be returned:
 
 -   **TOBII_ERROR_INVALID_PARAMETER**
 
-The *device* or *value* parameter has been passed in as NULL or you passed in a *state* that is not a uint32 state i.e
-TOBII_STATE_CALIBRATION_ID.
+    The *device* or *value* parameter has been passed in as NULL or you passed in a *state* that is not a uint32 state i.e
+    TOBII_STATE_FAULT.
 
 -   **TOBII_ERROR_NOT_SUPPORTED**
 
-The device firmware has no support for retrieving the value of this state.
+    The device firmware has no support for retrieving the value of this state.
 
 -   **TOBII_ERROR_CALLBACK_IN_PROGRESS**
 
@@ -1720,6 +1719,113 @@ The device firmware has no support for retrieving the value of this state.
 
 
 
+tobii_get_state_string
+--------------------
+
+### Function
+
+Gets the current string value of a state in the tracker.
+
+
+### Syntax
+
+    #include <tobii/tobii.h>
+    tobii_error_t tobii_get_state_string( tobii_device_t* device, tobii_state_t state,
+        tobii_state_string_t value );
+
+
+### Remarks
+
+*device* must be a pointer to a valid tobii_device_t instance as created by calling tobii_device_create or
+tobii_device_create_ex.
+
+*state* is one of the enum values in tobii_state_t listed below:
+
+-   **TOBII_STATE_FAULT**
+
+    Retrieves a comma separated list of critical errors, if no errors exists the string "ok" is returned. If a critical
+    error has occured the device will be unable to track or accept subscriptions.
+
+-   **TOBII_STATE_WARNING**
+
+    Retrieves a comma separated list of warnings, if no warnings exists the string "ok" is returned. If a warning has
+    occured the device should still be able to track and accept subscriptions.
+
+*value* must be a pointer to a valid tobii_state_string_t instance. On success, *value* will be set to a null
+terminated string containing a maximum of 512 characters including the null termination. On failure, *value* parameter
+remains untouched.
+
+**NOTE:** This method relies on cached values which is updated when tobii_process_callbacks() is called, so it might not
+represent the true state of the device if some time have passed since the last call to tobii_process_callbacks().
+
+
+### Return value
+
+If the call was successful **TOBII_ERROR_NO_ERROR** will be returned. If the call has failed one of the following error
+will be returned:
+
+-   **TOBII_ERROR_INVALID_PARAMETER**
+
+    The *device* or *value* parameter has been passed in as NULL or you passed in a *state* that is not a string state i.e
+    TOBII_STATE_CALIBRATION_ID.
+
+-   **TOBII_ERROR_NOT_SUPPORTED**
+
+    The device firmware has no support for retrieving the value of this state.
+
+-   **TOBII_ERROR_CALLBACK_IN_PROGRESS**
+
+    The function failed because it was called from within a callback triggered from an API call such as 
+    tobii_device_process_callbacks(), tobii_calibration_retrieve(), tobii_enumerate_illumination_modes(), 
+    or tobii_license_key_retrieve().
+    Calling tobii_get_state_string from within a callback function is not supported.
+
+
+### Example
+
+
+    #include <tobii/tobii.h>
+    #include <stdio.h>
+    #include <inttypes.h>
+    #include <assert.h>
+
+    static void url_receiver( char const* url, void* user_data )
+    {
+        char* buffer = (char*)user_data;
+        if( *buffer != '\0' ) return; // only keep first value
+
+        if( strlen( url ) < 256 )
+            strcpy( buffer, url );
+    }
+
+    int main()
+    {
+        tobii_api_t* api;
+        tobii_error_t error = tobii_api_create( &api, NULL, NULL );
+        assert( error == TOBII_ERROR_NO_ERROR );
+
+        char url[ 256 ] = { 0 };
+        error = tobii_enumerate_local_device_urls( api, url_receiver, url );
+        assert( error == TOBII_ERROR_NO_ERROR && *url != '\0' );
+
+        tobii_device_t* device;
+        error = tobii_device_create( api, url, &device );
+        assert( error == TOBII_ERROR_NO_ERROR );
+
+        tobii_state_string_t value;
+        error = tobii_get_state_string( device, TOBII_STATE_FAULT, value );
+        assert( error == TOBII_ERROR_NO_ERROR );
+
+        printf( "Device fault status: %s\n", value );
+
+        tobii_device_destroy( device );
+        tobii_api_destroy( api );
+
+        return 0;
+    }
+
+
+
 tobii_capability_supported
 --------------------------
 
@@ -1748,18 +1854,31 @@ tobii_device_create_ex.
 
 -   **TOBII_CAPABILITY_CALIBRATION_2D**
 
-    Query if the devcie supports performing 2D calibration by calling tobii_calibration_collect_data_2d().
+    Query if the device supports performing 2D calibration by calling tobii_calibration_collect_data_2d().
 
 -   **TOBII_CAPABILITY_CALIBRATION_3D**
 
-    Query if the devcie supports performing 3D calibration by calling tobii_calibration_collect_data_3d().
+    Query if the device supports performing 3D calibration by calling tobii_calibration_collect_data_3d().
 
 -   **TOBII_CAPABILITY_PERSISTENT_STORAGE**
 
-    Query if the devcie support persistent storage, needed to use tobii_license_key_store and tobii_license_key_retrieve.
+    Query if the device supports persistent storage, needed to use tobii_license_key_store and tobii_license_key_retrieve.
 
-*supported* must be a pointer to a valid tobii_supported_t instance. If tobii_capability_supported is successfull, 
-*supported* will be set to  **TOBII_SUPPORTED** if the feature is supported, and **TOBII_NOT_SUPPORTED** if it is not.
+-   **TOBII_CAPABILITY_CALIBRATION_PER_EYE**
+
+    Query if the device supports per-eye calibration, needed to use the per-eye calibration api.
+
+-   **TOBII_CAPABILITY_COMBINED_GAZE_VR**
+
+    Query if the device supports combined gaze point in the wearable data stream.
+
+-   **TOBII_CAPABILITY_FACE_TYPE**
+
+    Query if the device supports face type setting, needed to use tobii_get_face_type(), tobii_set_face_type() and
+    tobii_enumerate_face_types().
+
+*supported* must be a pointer to a valid tobii_supported_t instance. If tobii_capability_supported is successful, 
+*supported* will be set to **TOBII_SUPPORTED** if the feature is supported, and **TOBII_NOT_SUPPORTED** if it is not.
 
 
 ### Return value
@@ -1873,7 +1992,7 @@ tobii_wearable.h and tobii_advanced.h
 -   **TOBII_STREAM_DIGITAL_SYNCPORT**
 -   **TOBII_STREAM_DIAGNOSTICS_IMAGE**
 
-*supported* must be a pointer to a valid tobii_supported_t instance. If tobii_stream_supported is successfull, 
+*supported* must be a pointer to a valid tobii_supported_t instance. If tobii_stream_supported is successful, 
 *supported* will be set to  **TOBII_SUPPORTED** if the feature is supported, and **TOBII_NOT_SUPPORTED** if it is not.
 
 
@@ -2034,6 +2153,11 @@ fails, tobii_gaze_point_subscribe returns one of the following:
 
     The device doesn't support the stream. This error is returned if the API is called with an old device and/or that is
     running outdated firmware.
+
+-   **TOBII_ERROR_TOO_MANY_SUBSCRIBERS**
+
+    Too many subscribers for the requested stream. Tobii eye trackers can have a limitation on the number of concurrent
+    subscribers to specific streams due to high bandwidth and/or high frequency of the data stream.
 
 -   **TOBII_ERROR_INTERNAL**
 
@@ -2257,6 +2381,11 @@ fails, tobii_gaze_origin_subscribe returns one of the following:
 
     The device doesn't support the stream. This error is returned if the API is called with an old device and/or that is
     running outdated firmware.
+
+-   **TOBII_ERROR_TOO_MANY_SUBSCRIBERS**
+
+    Too many subscribers for the requested stream. Tobii eye trackers can have a limitation on the number of concurrent
+    subscribers to specific streams due to high bandwidth and/or high frequency of the data stream.
 
 -   **TOBII_ERROR_INTERNAL**
 
@@ -2495,6 +2624,11 @@ fails, tobii_eye_position_normalized_subscribe returns one of the following:
     The device doesn't support the stream. This error is returned if the API is called with an old device and/or that is
     running outdated firmware.
 
+-   **TOBII_ERROR_TOO_MANY_SUBSCRIBERS**
+
+    Too many subscribers for the requested stream. Tobii eye trackers can have a limitation on the number of concurrent
+    subscribers to specific streams due to high bandwidth and/or high frequency of the data stream.
+
 -   **TOBII_ERROR_INTERNAL**
 
     Some unexpected internal error occurred. This error should normally not be returned, so if it is, please contact
@@ -2717,6 +2851,11 @@ fails, tobii_user_presence_subscribe returns one of the following:
 
     The device doesn't support the stream. This error is returned if the API is called with an old device and/or that is
     running outdated firmware.
+
+-   **TOBII_ERROR_TOO_MANY_SUBSCRIBERS**
+
+    Too many subscribers for the requested stream. Tobii eye trackers can have a limitation on the number of concurrent
+    subscribers to specific streams due to high bandwidth and/or high frequency of the data stream.
 
 -   **TOBII_ERROR_INTERNAL**
 
@@ -2954,6 +3093,11 @@ fails, tobii_head_pose_subscribe returns one of the following:
     The device doesn't support head pose. This error is returned if the API is called with an old device which
     doesn't support head pose.
 
+-   **TOBII_ERROR_TOO_MANY_SUBSCRIBERS**
+
+    Too many subscribers for the requested stream. Tobii eye trackers can have a limitation on the number of concurrent
+    subscribers to specific streams due to high bandwidth and/or high frequency of the data stream.
+
 -   **TOBII_ERROR_NOT_AVAILABLE**
 
     Head pose is not available as the software component responsible for providing it is not running. Head pose requires
@@ -3158,7 +3302,11 @@ following parameters:
         **TOBII_NOTIFICATION_TYPE_POWER_SAVE_STATE_CHANGED**
         **TOBII_NOTIFICATION_TYPE_DEVICE_PAUSED_STATE_CHANGED**
         **TOBII_NOTIFICATION_TYPE_CALIBRATION_ENABLED_EYE_CHANGED**
+        **TOBII_NOTIFICATION_TYPE_CALIBRATION_ID_CHANGED**
         **TOBII_NOTIFICATION_TYPE_COMBINED_GAZE_FACTOR_CHANGED**
+        **TOBII_NOTIFICATION_TYPE_FAULTS_CHANGED**
+        **TOBII_NOTIFICATION_TYPE_WARNINGS_CHANGED**
+        **TOBII_NOTIFICATION_TYPE_FACE_TYPE_CHANGED**
 
     -   *value_type*
 
@@ -3168,7 +3316,9 @@ following parameters:
         **TOBII_NOTIFICATION_VALUE_TYPE_FLOAT**
         **TOBII_NOTIFICATION_VALUE_TYPE_STATE**
         **TOBII_NOTIFICATION_VALUE_TYPE_DISPLAY_AREA**
+        **TOBII_NOTIFICATION_VALUE_TYPE_UINT**
         **TOBII_NOTIFICATION_VALUE_TYPE_ENABLED_EYE**
+        **TOBII_NOTIFICATION_VALUE_TYPE_STRING**
 
     -   *value*
 
@@ -3196,6 +3346,11 @@ fails, tobii_notifications_subscribe returns one of the following:
 
     A subscription for notifications were already made. There can only be one callback registered at a time.
     To change to another callback, first call tobii_notifications_unsubscribe().
+
+-   **TOBII_ERROR_TOO_MANY_SUBSCRIBERS**
+
+    Too many subscribers for the requested stream. Tobii eye trackers can have a limitation on the number of concurrent
+    subscribers to specific streams due to high bandwidth and/or high frequency of the data stream.
 
 -   **TOBII_ERROR_INTERNAL**
 
@@ -3449,6 +3604,28 @@ This function will be called when there is new data available. It is called with
     -   *right*
         This is another instance of the same struct as in *left*, but which holds data related to the right eye of the user.
 
+    -   *gaze_origin_combined_validity*
+        **TOBII_VALIDITY_INVALID** if *gaze_origin_combined_mm_xyz* is not valid for this frame, **TOBII_VALIDITY_VALID** if it is.
+
+        This field will only be set if you have the capability TOBII_CAPABILITY_COMBINED_GAZE_VR. See tobii_capability_supported().
+
+    -   *gaze_origin_combined_mm_xyz*
+        An array of three floats, for the x, y and z coordinate of the point in from which the combined gaze ray originates, expressed 
+        in a right-handed Cartesian coordinate system.
+
+        This field will only be set if you have the capability TOBII_CAPABILITY_COMBINED_GAZE_VR. See tobii_capability_supported().
+
+    -   *gaze_direction_combined_validity*
+        **TOBII_VALIDITY_INVALID** if *gaze_direction_combined_normalized_xyz* is not valid for this frame, **TOBII_VALIDITY_VALID** if it is.
+
+        This field will only be set if you have the capability TOBII_CAPABILITY_COMBINED_GAZE_VR. See tobii_capability_supported().
+
+    -   *gaze_direction_combined_normalized_xyz*
+        An array of three floats, for the x, y and z coordinate of the combined gaze direction of the left and right eye of the user, expressed
+        as a unit vector in a right-handed Cartesian coordinate system.
+
+        This field will only be set if you have the capability TOBII_CAPABILITY_COMBINED_GAZE_VR. See tobii_capability_supported().
+
 -   *user_data*
     This is the custom pointer sent in when registering the callback.
 
@@ -3473,6 +3650,11 @@ fails, tobii_wearable_data_subscribe returns one of the following:
 
     The device doesn't support the stream. This error is returned if the API is called with a non-VR device.
 
+-   **TOBII_ERROR_TOO_MANY_SUBSCRIBERS**
+
+    Too many subscribers for the requested stream. Tobii eye trackers can have a limitation on the number of concurrent
+    subscribers to specific streams due to high bandwidth and/or high frequency of the data stream.
+
 -   **TOBII_ERROR_INTERNAL**
 
     Some unexpected internal error occurred. This error should normally not be returned, so if it is, please contact
@@ -3487,7 +3669,7 @@ fails, tobii_wearable_data_subscribe returns one of the following:
 
 ### See also
 
-tobii_wearable_data_unsubscribe(), tobii_device_process_callbacks()
+tobii_wearable_data_unsubscribe(), tobii_device_process_callbacks(), tobii_capability_supported()
 
 
 ### Example

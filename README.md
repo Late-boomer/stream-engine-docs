@@ -42,6 +42,15 @@
 
 Stream Engine change log below:
 
+What's new in version 2.2.1:
+
+	* Added new fault and warning notifications, which is triggered if the fault or warning state changes.
+	* Added ability to query fault and warning state through new function tobii_get_state_string() which will return a comma separated string.
+	* New stream subscription return code TOBII_ERROR_TOO_MANY_SUBSCRIBERS, which is returned by the subscribe function if the tracker has reached its maximum allowed subscribers.
+	* Add combined gaze data to wearable stream and capability TOBII_CAPABILITY_COMBINED_GAZE_VR.
+	* Enable services interface on Linux, which enables headpose and tobii_engine Api if a Tobii Engine for Linux is installed.
+
+
 What's new in version 2.0.2:
 
 	* tobii_device_create no longer supports null URL as input parameter, this will result in a TOBII_ERROR_INVALID_PARAMETER return code.
