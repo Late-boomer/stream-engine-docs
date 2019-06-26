@@ -47,8 +47,7 @@ Stream Engine change log below:
 
 What's new in version 3.3.0:
 
-	* First public release of stream engine 3.X
-	* For a detailed list of changes please see separate 2.x -> 3.x migration guide at [Tobii Developer Zone](http://developer.tobii.com/).
+ - For a detailed list of changes please see separate [migration guide](docs/migration_guide_2.x_to_3.x.md).
 
 What's new in version 2.2.1:
 
