@@ -1,21 +1,41 @@
 #include <tobii/tobii.h>
 #include <tobii/tobii_streams.h>
 
-#pragma warning( push )
-#pragma warning( disable: 4548 4265 4255 4668 4355 4625 4571 4626 5026 5027 ) // disable warnings triggered by STL code
-#include <atomic>
-#include <thread>
-#include <mutex>
+#include <stdio.h>
+#include <stropts.h>
+#include <sys/ioctl.h>
+#include <sys/select.h>
+#include <termios.h>
+
 #include <vector>
 #include <string>
+#include <limits>
 #include <iostream>
-#include <algorithm>
-#pragma warning( pop )
+#include <ios>
+#include <thread>
+#include <mutex>
+#include <atomic>
 
-#include <conio.h>
+int _kbhit() {
+    static const int STDIN = 0;
+    static bool initialized = false;
 
+    if (! initialized) {
+        // Use termios to turn off line buffering
+        termios term;
+        tcgetattr(STDIN, &term);
+        term.c_lflag &= ~ICANON;
+        tcsetattr(STDIN, TCSANOW, &term);
+        setbuf(stdin, NULL);
+        initialized = true;
+    }
 
-static auto list_devices( tobii_api_t* api )
+    int bytesWaiting;
+    ioctl(STDIN, FIONREAD, &bytesWaiting);
+    return bytesWaiting;
+}
+
+static std::vector<std::string> list_devices( tobii_api_t* api )
 {
     std::vector<std::string> result;
     auto error = tobii_enumerate_local_device_urls( api,
@@ -31,7 +51,7 @@ static auto list_devices( tobii_api_t* api )
 }
 
 
-static auto select_device( std::vector<std::string> const& devices )
+static std::string select_device( std::vector<std::string> const& devices )
 {
     auto selection = 0u;
     // Present the available devices and loop until user has selected a valid device
@@ -63,7 +83,7 @@ static void log( void* log_context, tobii_log_level_t level, char const* text )
 }
 
 
-static auto reconnect( tobii_device_t* device )
+static tobii_error_t reconnect( tobii_device_t* device )
 {
     // Try reconnecting for 10 seconds before giving up
     for( int i = 0; i < 40; ++i )
@@ -76,8 +96,8 @@ static auto reconnect( tobii_device_t* device )
     return TOBII_ERROR_CONNECTION_FAILED;
 }
 
-
-int background_thread_sample_main()
+extern int background_thread_sample_main( void );
+int background_thread_sample_main( void )
 {
     // Create log mutex used for thread synchronization in log function
     std::mutex log_mutex;
@@ -171,7 +191,7 @@ int background_thread_sample_main()
     // Main loop
     while( !_kbhit() )
     {
-        // Normally, main thread would do things here - simulate this with a sleep 
+        // Normally, main thread would do things here - simulate this with a sleep
         std::this_thread::sleep_for( std::chrono::milliseconds( 100 ) );
     }
 

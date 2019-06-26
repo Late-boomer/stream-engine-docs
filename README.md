@@ -20,17 +20,20 @@
 
 # Compatibility
 
-  Currently Tobii Stream Engine only supports Windows.
+  Tobii Stream Engine supports all major desktop operating systems Windows(x86 and x64), Linux(x64) and macOS(x64).
 
 # Dependencies
-  Binaries are available on NuGet:
+  Binaries can be downloaded from the Tobii developer zone:
   
-  * [Stream Engine C# NuGet package](https://www.nuget.org/packages/Tobii.StreamEngine/)
+  * [Stream Engine C/C++ binary archive](http://developer.tobii.com/downloads/)are available on NuGet:
+
+  or as NuGet packages(Windows only):
+
+  * [Stream Engine C# NuGet package](https://www.nuget.org/packages/Tobii.StreamEngine/) 
   
   * [Stream Engine C/C++ Native NuGet package](https://www.nuget.org/packages/Tobii.StreamEngine.Native/)
-
-  or as zip archive from the Developer Zone:
-  * [Stream Engine C/C++ binary archive](http://developer.tobii.com/downloads/)
+  
+  (Stream Engine 3.3.0 will soon be available for download via NuGet)
 
 # License
 
@@ -41,6 +44,11 @@
 # Revision history
 
 Stream Engine change log below:
+
+What's new in version 3.3.0:
+
+	* First public release of stream engine 3.X
+	* For a detailed list of changes please see separate 2.x -> 3.x migration guide at [Tobii Developer Zone](http://developer.tobii.com/).
 
 What's new in version 2.2.1:
 
