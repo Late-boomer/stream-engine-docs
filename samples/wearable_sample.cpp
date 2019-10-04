@@ -18,31 +18,19 @@
         return select( 1, &fds, NULL, NULL, &tv );
     }
 #endif
-static void wearable_callback( tobii_wearable_data_t const* data, void* /* user_data */ )
+static void wearable_callback( tobii_wearable_consumer_data_t const* data, void* /* user_data */ )
 {
-    printf( "Gaze Direction: T %" PRIu64, data->timestamp_tracker_us );
-    if( data->left.gaze_direction_validity == TOBII_VALIDITY_VALID )
+    printf( "Gaze Direction: T %" PRIu64, data->timestamp_system_us );
+    if( data->gaze_direction_combined_validity == TOBII_VALIDITY_VALID )
     {
-        printf( "\tLeft {x:% 2.2f, y:% 2.2f, z:% 2.2f} ",
-            data->left.gaze_direction_normalized_xyz[ 0 ],
-            data->left.gaze_direction_normalized_xyz[ 1 ],
-            data->left.gaze_direction_normalized_xyz[ 2 ] );
+        printf( "\tCombined {x:% 2.2f, y:% 2.2f, z:% 2.2f} ",
+            data->gaze_direction_combined_normalized_xyz[ 0 ],
+            data->gaze_direction_combined_normalized_xyz[ 1 ],
+            data->gaze_direction_combined_normalized_xyz[ 2 ] );
     }
     else
     {
-        printf( "\tLeft INVALID\t\t\t" );
-    }
-
-    if( data->right.gaze_direction_validity == TOBII_VALIDITY_VALID )
-    {
-        printf( "\tRight {x:% 2.2f, y:% 2.2f, z:% 2.2f}",
-            data->right.gaze_direction_normalized_xyz[ 0 ],
-            data->right.gaze_direction_normalized_xyz[ 1 ],
-            data->right.gaze_direction_normalized_xyz[ 2 ] );
-    }
-    else
-    {
-        printf( "\tRight INVALID\t\t\t" );
+        printf( "\tCombined INVALID\t\t\t" );
     }
 
     printf( "\n" );
@@ -61,11 +49,11 @@ int wearable_sample_main()
     tobii_device_t* device;
 
     // Sending an empty url connects to the first eye tracker found.
-    error = tobii_device_create( api, 0, &device );
+    error = tobii_device_create( api, 0, TOBII_FIELD_OF_USE_INTERACTIVE, &device );
     assert( error == TOBII_ERROR_NO_ERROR );
 
     // Subscribe to a stream of wearable eye tracking data. The callback you supply will be called from tobii_process_callbacks.
-    error = tobii_wearable_data_subscribe( device, wearable_callback, 0 ); assert( error == TOBII_ERROR_NO_ERROR );
+    error = tobii_wearable_consumer_data_subscribe( device, wearable_callback, 0 ); assert( error == TOBII_ERROR_NO_ERROR );
 
     // If you have a natural loop (game loop or similar) occurring frequently (> 10 times a second) in your system you
     // could process call back data in the loop
@@ -86,7 +74,7 @@ int wearable_sample_main()
     }
 
     // Always unsubscribe as soon as you no longer need the data
-    error = tobii_wearable_data_unsubscribe( device ); assert( error == TOBII_ERROR_NO_ERROR );
+    error = tobii_wearable_consumer_data_unsubscribe( device ); assert( error == TOBII_ERROR_NO_ERROR );
 
     // Destroying the device will free up resources held by the device
 	error = tobii_device_destroy( device ); assert( error == TOBII_ERROR_NO_ERROR );

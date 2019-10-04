@@ -1,7 +1,7 @@
 
 
 
-**Tobii Stream Engine API 3.3.0 - Reference Documentation**
+**Tobii Stream Engine API 4.1.0 - Reference Documentation**
 
 Tobii Eye Trackers generate eye tracking data streams (including user presence, headpose, etc) through the Tobii Stream Engine.
 Core functions and basic data streams are openly available through the Tobii Stream Engine API.
@@ -602,8 +602,8 @@ Creates a device instance to be used for communicating with a specific device.
 ### Syntax
 
     #include <tobii/tobii.h>
-    tobii_error_t tobii_device_create( tobii_api_t* api,
-        char const* url, tobii_device_t** device );
+    tobii_error_t tobii_device_create( tobii_api_t* api, char const* url,
+        tobii_field_of_use_t field_of_use, tobii_device_t** device );
 
 
 ### Remarks
@@ -613,9 +613,25 @@ tobii_device_create allocates and initializes this state, and is needed for all 
 with a device. Creating a device will establish a connection to the tracker, and can be used to query the device for 
 more information.
 
+User of the stream engine API needs to make a conscious decision regarding the intended field of use for the device by
+choosing between interactive or analytical use.
+
 *api* must be a pointer to a valid tobii_api_t as created by calling tobii_api_create.
 
 *url* must be a valid device url as returned by tobii_enumerate_local_device_urls.
+
+*field_of_use* is one of the enum values in tobii_field_of_use_t:
+
+-   **TOBII_FIELD_OF_USE_INTERACTIVE**
+
+Device will be created for interactive use. No special license is required for this type use. Eye tracking data is only
+used as a user input for interaction experiences and cannot be stored, transmitted, nor analyzed or processed for other
+purposes.
+
+-   **TOBII_FIELD_OF_USE_ANALYTICAL**
+
+Device will be created for analytical use. This requires a special license from Tobii. Eye tracking data is used to analyze
+user attention, behavior or decisions in applications that store, transfer, record or analyze the data.
 
 *device* must be a pointer to a variable of the type `tobii_device_t*` that is, a pointer to a 
 tobii_device_t-pointer. This variable will be filled in with a pointer to the created device instance. 
@@ -629,7 +645,8 @@ tobii_device_create returns one of the following:
 
 -   **TOBII_ERROR_INVALID_PARAMETER**
 
-    The *api* or *device* parameters were passed in as NULL, or the url string is not a valid device url (or NULL).
+    The *api* or *device* parameters were passed in as NULL, the url string is not a valid device url (or NULL) or
+    *tobii_field_of_use_t* value is not a valid value from tobii_field_of_use_t enum.
 
 -   **TOBII_ERROR_ALLOCATION_FAILED**
 
@@ -638,6 +655,10 @@ tobii_device_create returns one of the following:
 -   **TOBII_ERROR_CONNECTION_FAILED**
 
     The connection to the device was lost. Call tobii_device_reconnect() to re-establish connection.
+
+-   **TOBII_ERROR_FIRMWARE_UPGRADE_IN_PROGRESS**
+
+    The firmware is currently in the process of being upgraded, try again in a little while.
 
 -   **TOBII_ERROR_INTERNAL**
 
@@ -685,7 +706,7 @@ tobii_get_feature_group()
         assert( error == TOBII_ERROR_NO_ERROR && *url != '\0' );
 
         tobii_device_t* device;
-        error = tobii_device_create( api, url, &device );
+        error = tobii_device_create( api, url, TOBII_FIELD_OF_USE_INTERACTIVE, &device );
         assert( error == TOBII_ERROR_NO_ERROR );
 
         // --> code to use the device would go here <--
@@ -858,7 +879,7 @@ tobii_device_process_callbacks()
         assert( error == TOBII_ERROR_NO_ERROR && *url != '\0' );
 
         tobii_device_t* device;
-        error = tobii_device_create( api, url, &device );
+        error = tobii_device_create( api, url, TOBII_FIELD_OF_USE_INTERACTIVE, &device );
         assert( error == TOBII_ERROR_NO_ERROR );
 
         int is_running = 1000; // in this sample, exit after some iterations
@@ -982,7 +1003,7 @@ tobii_wait_for_callbacks(), tobii_device_clear_callback_buffers(), tobii_device_
         assert( error == TOBII_ERROR_NO_ERROR && *url != '\0' );
 
         tobii_device_t* device;
-        error = tobii_device_create( api, url, &device );
+        error = tobii_device_create( api, url, TOBII_FIELD_OF_USE_INTERACTIVE, &device );
         assert( error == TOBII_ERROR_NO_ERROR );
 
         int is_running = 1000; // in this sample, exit after some iterations
@@ -1087,6 +1108,10 @@ tobii_device_create_ex.
 
     When attempting to reconnect, a connection could not be established. You might want to wait for a bit and try again, 
     for a few times, and if the problem persists, display a message for the user.
+
+-   **TOBII_ERROR_FIRMWARE_UPGRADE_IN_PROGRESS**
+
+    The firmware is currently in the process of being upgraded, try again in a little while.
 
 -   **TOBII_ERROR_INTERNAL**
 
@@ -1202,7 +1227,7 @@ tobii_wait_for_callbacks(), tobii_device_reconnect(),  tobii_device_process_call
         assert( error == TOBII_ERROR_NO_ERROR && *url != '\0' );
 
         tobii_device_t* device;
-        error = tobii_device_create( api, url, &device );
+        error = tobii_device_create( api, url, TOBII_FIELD_OF_USE_INTERACTIVE, &device );
         assert( error == TOBII_ERROR_NO_ERROR );
 
         int is_running = 1000; // in this sample, exit after some iterations
@@ -1382,7 +1407,7 @@ tobii_device_create(), tobii_enumerate_local_device_urls()
         assert( error == TOBII_ERROR_NO_ERROR && *url != '\0' );
 
         tobii_device_t* device;
-        error = tobii_device_create( api, url, &device );
+        error = tobii_device_create( api, url, TOBII_FIELD_OF_USE_INTERACTIVE, &device );
         assert( error == TOBII_ERROR_NO_ERROR );
 
         tobii_device_info_t info;
@@ -1488,7 +1513,7 @@ fails, tobii_get_track_box returns one of the following:
         assert( error == TOBII_ERROR_NO_ERROR && *url != '\0' );
 
         tobii_device_t* device;
-        error = tobii_device_create( api, url, &device );
+        error = tobii_device_create( api, url, TOBII_FIELD_OF_USE_INTERACTIVE, &device );
         assert( error == TOBII_ERROR_NO_ERROR );
 
         tobii_track_box_t track_box;
@@ -1613,7 +1638,7 @@ will be returned:
         assert( error == TOBII_ERROR_NO_ERROR && *url != '\0' );
 
         tobii_device_t* device;
-        error = tobii_device_create( api, url, &device );
+        error = tobii_device_create( api, url, TOBII_FIELD_OF_USE_INTERACTIVE, &device );
         assert( error == TOBII_ERROR_NO_ERROR );
 
         tobii_state_bool_t value;
@@ -1715,7 +1740,7 @@ will be returned:
         assert( error == TOBII_ERROR_NO_ERROR && *url != '\0' );
 
         tobii_device_t* device;
-        error = tobii_device_create( api, url, &device );
+        error = tobii_device_create( api, url, TOBII_FIELD_OF_USE_INTERACTIVE, &device );
         assert( error == TOBII_ERROR_NO_ERROR );
 
         uint32_t value;
@@ -1822,7 +1847,7 @@ will be returned:
         assert( error == TOBII_ERROR_NO_ERROR && *url != '\0' );
 
         tobii_device_t* device;
-        error = tobii_device_create( api, url, &device );
+        error = tobii_device_create( api, url, TOBII_FIELD_OF_USE_INTERACTIVE, &device );
         assert( error == TOBII_ERROR_NO_ERROR );
 
         tobii_state_string_t value;
@@ -2002,7 +2027,7 @@ tobii_stream_supported()
         assert( error == TOBII_ERROR_NO_ERROR && *url != '\0' );
 
         tobii_device_t* device;
-        error = tobii_device_create( api, url, &device );
+        error = tobii_device_create( api, url, TOBII_FIELD_OF_USE_INTERACTIVE, &device );
         assert( error == TOBII_ERROR_NO_ERROR );
 
         tobii_supported_t supported;
@@ -2109,7 +2134,7 @@ tobii_capability_supported()
         assert( error == TOBII_ERROR_NO_ERROR && *url != '\0' );
 
         tobii_device_t* device;
-        error = tobii_device_create( api, url, &device );
+        error = tobii_device_create( api, url, TOBII_FIELD_OF_USE_INTERACTIVE, &device );
         assert( error == TOBII_ERROR_NO_ERROR );
 
         tobii_supported_t supported;
@@ -2120,102 +2145,6 @@ tobii_capability_supported()
             printf( "Device supports gaze point stream." );
         else
             printf( "Device does not support gaze point stream." );
-
-        tobii_device_destroy( device );
-        tobii_api_destroy( api );
-
-        return 0;
-    }
-
-
-
-tobii_get_firmware_upgrade_state
-----------------------
-
-### Function
-
-Ask what the current firmware upgrade status is
-
-
-### Syntax
-
-    #include <tobii/tobii.h>
-    tobii_error_t tobii_get_firmware_upgrade_state( tobii_device_t* device, 
-        tobii_firmware_upgrade_state_t* firmware_upgrade_state );
-
-
-### Remarks
-
-*device* must be a pointer to a valid tobii_device_t instance as created by calling tobii_device_create or 
-tobii_device_create_ex.
-
-*firmware_upgrade_state* must be a pointer to a valid tobii_firmware_upgrade_state_t instance.
- If tobii_get_firmware_upgrade_state is successful, *firmware_upgrade_state* will be set to  
-**TOBII_FIRMWARE_UPGRADE_STATE_IN_PROGRESS** or **TOBII_FIRMWARE_UPGRADE_STATE_NOT_IN_PROGRESS**
-depending on if there is an ongoing upgrade.
-
-
-### Return value
-
-If the call was successful **TOBII_ERROR_NO_ERROR** will be returned. If the call has failed one of the following errors
-will be returned:
-
--   **TOBII_ERROR_INVALID_PARAMETER**
-
-    The *device* or *firmware_upgrade_state* parameter has been passed in as NULL.
-
--   **TOBII_ERROR_CALLBACK_IN_PROGRESS**
-
-    The function failed because it was called from within a callback triggered from an API call such as 
-    tobii_device_process_callbacks(), tobii_calibration_retrieve(), tobii_enumerate_illumination_modes(), 
-    or tobii_license_key_retrieve().
-    Calling tobii_stream_supported from within a callback function is not supported.
-
--   **TOBII_ERROR_INSUFFICIENT_LICENSE**
-
-    The provided license was not valid, or has been blacklisted.
-
-### See also
-
-
-### Example
-
-
-    #include <tobii/tobii.h>
-    #include <stdio.h>
-    #include <assert.h>
-
-    static void url_receiver( char const* url, void* user_data )
-    {
-        char* buffer = (char*)user_data;
-        if( *buffer != '\0' ) return; // only keep first value
-
-        if( strlen( url ) < 256 )
-            strcpy( buffer, url );
-    }
-
-    int main()
-    {
-        tobii_api_t* api;
-        tobii_error_t error = tobii_api_create( &api, NULL, NULL );
-        assert( error == TOBII_ERROR_NO_ERROR );
-
-        char url[ 256 ] = { 0 };
-        error = tobii_enumerate_local_device_urls( api, url_receiver, url );
-        assert( error == TOBII_ERROR_NO_ERROR && *url != '\0' );
-
-        tobii_device_t* device;
-        error = tobii_device_create( api, url, &device );
-        assert( error == TOBII_ERROR_NO_ERROR );
-
-        tobii_firmware_upgrade_state_t state;
-        error = tobii_get_firmware_upgrade_state( device, &state );
-        assert( error == TOBII_ERROR_NO_ERROR );
-
-        if( state == TOBII_FIRMWARE_UPGRADE_STATE_IN_PROGRESS )
-            printf( "There is an upgrade in progress." );
-        else
-            printf( "There is no upgrade in progress." );
 
         tobii_device_destroy( device );
         tobii_api_destroy( api );
@@ -2340,7 +2269,7 @@ tobii_gaze_point_unsubscribe(), tobii_device_process_callbacks(), tobii_system_c
         assert( error == TOBII_ERROR_NO_ERROR && *url != '\0' );
 
         tobii_device_t* device;
-        error = tobii_device_create( api, url, &device );
+        error = tobii_device_create( api, url, TOBII_FIELD_OF_USE_INTERACTIVE, &device );
         assert( error == TOBII_ERROR_NO_ERROR );
 
         error = tobii_gaze_point_subscribe( device, gaze_point_callback, 0 );
@@ -2521,7 +2450,7 @@ tobii_system_clock()
         assert( error == TOBII_ERROR_NO_ERROR && *url != '\0' );
 
         tobii_device_t* device;
-        error = tobii_device_create( api, url, &device );
+        error = tobii_device_create( api, url, TOBII_FIELD_OF_USE_INTERACTIVE, &device );
         assert( error == TOBII_ERROR_NO_ERROR );
 
         error = tobii_gaze_origin_subscribe( device, gaze_origin_callback, 0 );
@@ -2706,7 +2635,7 @@ tobii_system_clock()
         assert( error == TOBII_ERROR_NO_ERROR && *url != '\0' );
 
         tobii_device_t* device;
-        error = tobii_device_create( api, url, &device );
+        error = tobii_device_create( api, url, TOBII_FIELD_OF_USE_INTERACTIVE, &device );
         assert( error == TOBII_ERROR_NO_ERROR );
 
         error = tobii_eye_position_normalized_subscribe( device, eye_position_callback, 0 );
@@ -2875,7 +2804,7 @@ tobii_user_presence_unsubscribe(), tobii_device_process_callbacks(), tobii_syste
         assert( error == TOBII_ERROR_NO_ERROR && *url != '\0' );
 
         tobii_device_t* device;
-        error = tobii_device_create( api, url, &device );
+        error = tobii_device_create( api, url, TOBII_FIELD_OF_USE_INTERACTIVE, &device );
         assert( error == TOBII_ERROR_NO_ERROR );
 
         error = tobii_user_presence_subscribe( device, presence_callback, 0 );
@@ -3057,7 +2986,7 @@ tobii_head_pose_unsubscribe()
         assert( error == TOBII_ERROR_NO_ERROR && *url != '\0' );
 
         tobii_device_t* device;
-        error = tobii_device_create( api, url, &device );
+        error = tobii_device_create( api, url, TOBII_FIELD_OF_USE_INTERACTIVE, &device );
         assert( error == TOBII_ERROR_NO_ERROR );
 
         error = tobii_head_pose_subscribe( device, head_pose_callback, 0 );
@@ -3250,7 +3179,7 @@ tobii_notifications_unsubscribe(), tobii_device_process_callbacks()
         assert( error == TOBII_ERROR_NO_ERROR && *url != '\0' );
 
         tobii_device_t* device;
-        error = tobii_device_create( api, url, &device );
+        error = tobii_device_create( api, url, TOBII_FIELD_OF_USE_INTERACTIVE, &device );
         assert( error == TOBII_ERROR_NO_ERROR );
 
         error = tobii_notifications_subscribe( device, notifications_callback, 0 );
@@ -3425,7 +3354,7 @@ tobii_user_position_guide_unsubscribe()
         assert( error == TOBII_ERROR_NO_ERROR && *url != '\0' );
 
         tobii_device_t* device;
-        error = tobii_device_create( api, url, &device );
+        error = tobii_device_create( api, url, TOBII_FIELD_OF_USE_INTERACTIVE, &device );
         assert( error == TOBII_ERROR_NO_ERROR );
 
         error = tobii_user_position_guide_subscribe( device, user_position_guide_callback, 0 );
@@ -3501,7 +3430,7 @@ of the device.
 
 
 
-tobii_wearable_data_subscribe
+tobii_wearable_consumer_data_subscribe
 -----------------------------
 
 ### Function
@@ -3512,8 +3441,8 @@ Start listening for eye tracking data from wearable device, such as VR headsets.
 ### Syntax
 
     #include <tobii/tobii_wearable.h>
-    tobii_error_t TOBII_CALL tobii_wearable_data_subscribe( tobii_device_t* device,
-        tobii_wearable_data_callback_t callback, void* user_data );
+    tobii_error_t TOBII_CALL tobii_wearable_consumer_data_subscribe( tobii_device_t* device,
+        tobii_wearable_consumer_data_callback_t callback, void* user_data );
 
 
 ### Remarks
@@ -3525,7 +3454,7 @@ tobii_device_create_ex.
 
 *callback* is a function pointer to a function with the prototype:
 
-    void wearable_callback( tobii_wearable_data_t const* data, void* user_data )
+    void wearable_callback( tobii_wearable_consumer_data_t const* data, void* user_data )
 
 This function will be called when there is new data available. It is called with the following parameters:
 
@@ -3533,72 +3462,26 @@ This function will be called when there is new data available. It is called with
     This is a pointer to a struct containing the data listed below. Note that it is only valid during the callback. Its data
     should be copied if access is necessary at a later stage, from outside the callback.
 
-    -   **(BETA)** *timestamp_tracker_us*
-        Timestamp value for when the data was captured, measured in microseconds (us). It is generated on the
-        device responsible for capturing the data. The epoch is undefined, so these timestamps are only useful for 
-        calculating the time elapsed between a pair of values. The value returned in *timestamp_system_us* is 
-        calculated from this value. 
-
-    -   *timestamp_system_us*
+    -   *timestamp_us*
         Timestamp value for when the data was captured, measured in microseconds (us), and synchronized with the clock of 
         the computer.  The function tobii_system_clock can be used to retrieve a timestamp (at the time of the call) using 
         the same clock and same relative values as this timestamp. The epoch is undefined, so these timestamps are only 
         useful for calculating the time elapsed between a pair of values.
 
-    -   *frame_counter*
-        A counter that increments by one each frame. There is no guarantee on its initial value. Will eventually wrap
-        around and restart at 0, which may be necessary to detect and handle if comparing the values between frames.
-
-    -   *led_mode*
-        A bitmask where each bit (starting from the least significant bit) represents a LED group and whether it is active
-        or not, with a value of 1 being active and 0 inactive.
-
     -   *left*
         This is a struct containing the following data, related to the left eye:
-
-        -   *gaze_origin_validity*
-            **TOBII_VALIDITY_INVALID** if *gaze_origin_mm_xyz* is not valid for this frame, **TOBII_VALIDITY_VALID** if it is.
-
-        -   *gaze_origin_mm_xyz*
-            An array of three floats, for the x, y and z coordinate of the point in the user's eye from which the calculated
-            gaze ray originates, expressed in a right-handed Cartesian coordinate system. See the wearable hardware specification
-            for its origin.
-
-        -   **(BETA)** *gaze_direction_validity*
-            **TOBII_VALIDITY_INVALID** if *gaze_direction_normalized_xyz* for the eye is not valid for this frame,
-            **TOBII_VALIDITY_VALID** if it is.
-
-        -   **(BETA)** *gaze_direction_normalized_xyz*
-            An array of three floats, for the x, y and z coordinate of the gaze direction of the eye of the user, expressed
-            as a unit vector in a right-handed Cartesian coordinate system.
-
-        -   **(BETA)** *pupil_diameter_validity*
-            **TOBII_VALIDITY_INVALID** if *pupil_diameter_mm* is not valid for this frame, **TOBII_VALIDITY_VALID** if it is.
-
-        -   **(BETA)** *pupil_diameter_mm*
-            A float that represents the approximate diameter of the pupil, expressed in millimeters. Only relative changes
-            are guaranteed to be accurate.
-
-        -   *eye_openness_validity*
-            **TOBII_VALIDITY_INVALID** if *eye_openess* for the eye is not valid for this frame, **TOBII_VALIDITY_VALID**
-            if it is.
-
-        -   *eye_openness*
-            A float that represents how open the user's eye is, where 1.0 means the eye is fully open and 0.0 the eye is fully closed.
-
-            Some devices are only be able to report fully open and fully closed.
 
         -   *pupil_position_in_sensor_area_validity*
             **TOBII_VALIDITY_INVALID** if *pupil_position_in_sensor_area_xy* is not valid for this frame,
             **TOBII_VALIDITY_VALID** if it is.
-
+ 
         -   *pupil_position_in_sensor_area_xy*
             An array of two floats, for the x and y of the position of the pupil normalized to the sensor area where
             (0, 0): is the top left of sensor area, from the sensor's perspective
             (1, 1): is the bottom right of sensor area, from the sensor's perspective
             In systems where multiple cameras observe both eyes, this signal gives the pupil position in the primary sensor.
             Useful for detecting and visualizing how well the eyes are centered in the sensor images.
-            
+
         -   *position_guide_validity*
             **TOBII_VALIDITY_INVALID** if *position_guide_xy* is not valid for this frame,
             **TOBII_VALIDITY_VALID** if it is.
@@ -3610,6 +3493,15 @@ This function will be called when there is new data available. It is called with
             0.3-0.7: is when the position is ok and all gaze use cases are supported (green eyes in the position guide app)
             0-0.3 and 0.7-1: is when the system might still output gaze but performance is degraded (yellow eyes)
             <0 and >1: is when any gaze values are not reliable. No gaze use cases are supported (red eyes)
+
+        -   *blink_validity*
+            **TOBII_VALIDITY_INVALID** if *blink* for the eye is not valid for this frame, **TOBII_VALIDITY_VALID**
+            if it is.
+
+        -   *blink*
+            A bool that represents if the user's eye is open, TOBII_STATE_BOOL_FALSE means the eye is open and TOBII_STATE_BOOL_TRUE the eye is closed.
+
+
 
     -   *right*
         This is another instance of the same struct as in *left*, but which holds data related to the right eye of the user.
@@ -3636,17 +3528,321 @@ This function will be called when there is new data available. It is called with
 
         This field will only be set if you have the capability TOBII_CAPABILITY_COMPOUND_STREAM_WEARABLE_3D_GAZE_COMBINED. See tobii_capability_supported().
 
-    -   *tracking_improvements_count*
-        The count gives the no of tracking improvements available in the array of **tracking_improvements**. If the count is 0 meaning there is no imrovement available.
+    -   *convergence_distance_validity*
+        **TOBII_VALIDITY_INVALID** if *convergence_distance_mm* is not valid for this frame, **TOBII_VALIDITY_VALID** if it is.
 
-    -   *tracking_improvements*, **DEPRECATED** See alternative signals *improve_user_position_hmd* and *increase_eye_relief*
+    -   *convergence_distance_mm*
+        convergence distance in mm. It is the distance from the midpoint between both left and right cornea position and the intersection point.
+    
+    -   *improve_user_position_hmd*
+        **TOBII_STATE_BOOL_TRUE** if the user needs to adjust the position of the HMD, otherwise **TOBII_STATE_BOOL_FALSE**.
 
-        This is an array containing the available tracking improvements. The array elements could be among the following enum values
-        **TOBII_WEARABLE_TRACKING_IMPROVEMENT_USER_POSITION_HMD** if the HMD position needs adjustment.
-        **TOBII_WEARABLE_TRACKING_IMPROVEMENT_CALIBRATION_CONTAINS_POOR_DATA** if the recalibration is required due to calibration contains poor data.
-        **TOBII_WEARABLE_TRACKING_IMPROVEMENT_CALIBRATION_DIFFERENT_BRIGHTNESS** if the recalibration is required with different brightness level.
-        **TOBII_WEARABLE_TRACKING_IMPROVEMENT_IMAGE_QUALITY** if the image quality needs to be improved.
-        **TOBII_WEARABLE_TRACKING_IMPROVEMENT_INCREASE_EYE_RELIEF** if the eye relief is required to be increased.
+        This field will only be set if you have the capability TOBII_CAPABILITY_COMPOUND_STREAM_WEARABLE_IMPROVE_USER_POSITION_HMD. See tobii_capability_supported().
+
+    -   *increase_eye_relief*
+        **TOBII_STATE_BOOL_TRUE** if the user need to increase eye relief, i.e increase the distance between the eyes and the HMD, otherwise **TOBII_STATE_BOOL_FALSE**.
+
+        This field will only be set if you have the capability TOBII_CAPABILITY_COMPOUND_STREAM_WEARABLE_INCREASE_EYE_RELIEF. See tobii_capability_supported().
+
+-   *user_data*
+    This is the custom pointer sent in when registering the callback.
+
+*user_data* custom pointer which will be passed unmodified to the callback function.
+
+
+### Return value
+
+If the operation is successful, tobii_wearable_consumer_data_subscribe() returns **TOBII_ERROR_NO_ERROR**. If the call
+fails, tobii_wearable_consumer_data_subscribe returns one of the following:
+
+-   **TOBII_ERROR_INVALID_PARAMETER**
+
+    One or more of the *device* and *callback* parameters were passed in as NULL. 
+
+-   **TOBII_ERROR_ALREADY_SUBSCRIBED**
+
+    A subscription for wearable data were already made. There can only be one callback registered at a time.
+    To change to another callback, first call tobii_wearable_consumer_data_unsubscribe().
+
+-   **TOBII_ERROR_NOT_SUPPORTED**
+
+    The device doesn't support the stream. This error is returned if the API is called with a non-VR device.
+
+-   **TOBII_ERROR_TOO_MANY_SUBSCRIBERS**
+
+    Too many subscribers for the requested stream. Tobii eye trackers can have a limitation on the number of concurrent
+    subscribers to specific streams due to high bandwidth and/or high frequency of the data stream.
+
+-   **TOBII_ERROR_INTERNAL**
+
+    Some unexpected internal error occurred. This error should normally not be returned, so if it is, please contact
+    the support.
+
+-   **TOBII_ERROR_CALLBACK_IN_PROGRESS**
+
+    The function failed because it was called from within a callback triggered from an API call such as 
+    tobii_device_process_callbacks(), tobii_calibration_retrieve(), tobii_enumerate_illumination_modes(), 
+    or tobii_license_key_retrieve().
+    Calling tobii_wearable_consumer_data_subscribe from within a callback function is not supported.
+
+### See also
+
+tobii_wearable_consumer_data_unsubscribe(), tobii_device_process_callbacks(), tobii_capability_supported()
+
+
+### Example
+
+
+    #include <tobii/tobii_wearable.h>
+    #include <stdio.h>
+    #include <assert.h>
+    #include <string.h>
+
+    void wearable_callback( tobii_wearable_consumer_data_t const* wearable, void* user_data )
+    {
+        if( wearable->gaze_direction_combined_validity )
+        {
+            printf( "Combined gaze direction: (%f, %f, %f)\n",
+                wearable->gaze_direction_combined_normalized_xyz[ 0 ],
+                wearable->gaze_direction_combined_normalized_xyz[ 1 ],
+                wearable->gaze_direction_combined_normalized_xyz[ 2 ] );
+        }
+        else
+            printf( "Right gaze direction: INVALID\n" );
+    }
+
+    static void url_receiver( char const* url, void* user_data )
+    {
+        char* buffer = (char*)user_data;
+        if( *buffer != '\0' ) return; // only keep first value
+
+        if( strlen( url ) < 256 )
+            strcpy( buffer, url );
+    }
+
+    int main()
+    {
+        tobii_api_t* api;
+        tobii_error_t error = tobii_api_create( &api, NULL, NULL );
+        assert( error == TOBII_ERROR_NO_ERROR );
+
+        char url[ 256 ] = { 0 };
+        error = tobii_enumerate_local_device_urls( api, url_receiver, url );
+        assert( error == TOBII_ERROR_NO_ERROR && *url != '\0' );
+
+        tobii_device_t* device;
+        error = tobii_device_create( api, url, TOBII_FIELD_OF_USE_INTERACTIVE, &device );
+        assert( error == TOBII_ERROR_NO_ERROR );
+
+        error = tobii_wearable_consumer_data_subscribe( device, wearable_callback, 0 );
+        assert( error == TOBII_ERROR_NO_ERROR );
+
+        int is_running = 1000; // in this sample, exit after some iterations
+        while( --is_running > 0 )
+        {
+            error = tobii_wait_for_callbacks( 1, &device );
+            assert( error == TOBII_ERROR_NO_ERROR || error == TOBII_ERROR_TIMED_OUT );
+
+            error = tobii_device_process_callbacks( device );
+            assert( error == TOBII_ERROR_NO_ERROR );
+        }
+
+        error = tobii_wearable_consumer_data_unsubscribe( device );
+        assert( error == TOBII_ERROR_NO_ERROR );
+
+        error = tobii_device_destroy( device );
+        assert( error == TOBII_ERROR_NO_ERROR );
+
+        error = tobii_api_destroy( api );
+        assert( error == TOBII_ERROR_NO_ERROR );
+        return 0;
+    }
+
+
+
+
+tobii_wearable_consumer_data_unsubscribe
+-------------------------------
+
+### Function
+
+Stops listening to the wearable data stream that was subscribed to by a call to tobii_wearable_consumer_data_subscribe().
+
+
+### Syntax
+
+    #include <tobii/tobii_wearable.h>
+    tobii_error_t TOBII_CALL tobii_wearable_consumer_data_unsubscribe( tobii_device_t* device );
+
+
+### Remarks
+
+*device* must be a pointer to a valid tobii_device_t instance as created by calling tobii_device_create or 
+tobii_device_create_ex.
+
+
+### Return value
+
+If the operation is successful, tobii_wearable_consumer_data_unsubscribe() returns **TOBII_ERROR_NO_ERROR**. If the call
+fails, tobii_wearable_consumer_data_unsubscribe returns one of the following:
+
+-   **TOBII_ERROR_INVALID_PARAMETER**
+
+    The *device* parameter was passed in as NULL. 
+
+-   **TOBII_ERROR_NOT_SUBSCRIBED**
+
+    There was no subscription for wearable data. It is only valid to call tobii_wearable_consumer_data_unsubscribe()
+    after first successfully calling tobii_wearable_consumer_data_subscribe().
+
+-   **TOBII_ERROR_NOT_SUPPORTED**
+
+    The device doesn't support the stream. This error is returned if the API is called with an old device and/or that is
+    running outdated firmware.
+
+-   **TOBII_ERROR_INTERNAL**
+
+    Some unexpected internal error occurred. This error should normally not be returned, so if it is, please contact
+    the support
+
+-   **TOBII_ERROR_CALLBACK_IN_PROGRESS**
+
+    The function failed because it was called from within a callback triggered from an API call such as 
+    tobii_device_process_callbacks(), tobii_calibration_retrieve(), tobii_enumerate_illumination_modes(), 
+    or tobii_license_key_retrieve().
+    Calling tobii_wearable_consumer_data_unsubscribe from within a callback function is not supported.
+
+### See also
+
+tobii_wearable_consumer_data_subscribe()
+
+
+
+tobii_wearable_advanced_data_subscribe
+-----------------------------
+
+### Function
+
+Start listening for eye tracking data from wearable device, such as VR headsets.
+
+
+### Syntax
+
+    #include <tobii/tobii_wearable.h>
+    tobii_error_t TOBII_CALL tobii_wearable_advanced_data_subscribe( tobii_device_t* device,
+        tobii_wearable_advanced_data_callback_t callback, void* user_data );
+
+
+### Remarks
+
+All coordinates are expressed in a right-handed Cartesian system with Z facing forward from the eye.
+
+*device* must be a pointer to a valid tobii_device_t instance as created by calling tobii_device_create or 
+tobii_device_create_ex.
+
+*callback* is a function pointer to a function with the prototype:
+
+    void wearable_callback( tobii_wearable_advanced_data_t const* data, void* user_data )
+
+This function will be called when there is new data available. It is called with the following parameters:
+
+-   *data*
+    This is a pointer to a struct containing the data listed below. Note that it is only valid during the callback. Its data
+    should be copied if access is necessary at a later stage, from outside the callback.
+
+    -   *timestamp_tracker_us*
+        Timestamp value for when the gaze data was captured in microseconds (us). It is generated on the device responsible for capturing the data.
+        *timestamp_system_us* is generated using this value. The epoch is undefined, so these timestamps are only useful for calculating
+        the time elapsed between a pair of values.
+
+    -   *timestamp_system_us*
+        Timestamp value for when the data was captured, measured in microseconds (us), and synchronized with the clock of 
+        the computer.  The function tobii_system_clock can be used to retrieve a timestamp (at the time of the call) using 
+        the same clock and same relative values as this timestamp. The epoch is undefined, so these timestamps are only 
+        useful for calculating the time elapsed between a pair of values.
+
+    -   *left*
+        This is a struct containing the following data, related to the left eye:
+
+        -   *gaze_origin_validity*
+            **TOBII_VALIDITY_INVALID** if *gaze_origin_mm_xyz* is not valid for this frame, **TOBII_VALIDITY_VALID** if it is.
+
+        -   *gaze_origin_mm_xyz*
+            An array of three floats, for the x, y and z coordinate of the point in the user's eye from which the calculated
+            gaze ray originates, expressed in a right-handed Cartesian coordinate system. See the wearable hardware specification
+            for its origin.
+
+        -   *gaze_direction_validity*
+            **TOBII_VALIDITY_INVALID** if *gaze_direction_normalized_xyz* for the eye is not valid for this frame,
+            **TOBII_VALIDITY_VALID** if it is.
+
+        -   *gaze_direction_normalized_xyz*
+            An array of three floats, for the x, y and z coordinate of the gaze direction of the eye of the user, expressed
+            as a unit vector in a right-handed Cartesian coordinate system.
+
+        -   *pupil_diameter_validity*
+            **TOBII_VALIDITY_INVALID** if *pupil_diameter_mm* is not valid for this frame, **TOBII_VALIDITY_VALID** if it is.
+
+        -   *pupil_diameter_mm*
+            A float that represents the approximate diameter of the pupil, expressed in millimeters. Only relative changes
+            are guaranteed to be accurate.
+
+        -   *pupil_position_in_sensor_area_validity*
+            **TOBII_VALIDITY_INVALID** if *pupil_position_in_sensor_area_xy* is not valid for this frame,
+            **TOBII_VALIDITY_VALID** if it is.
+
+        -   *pupil_position_in_sensor_area_xy*
+            An array of two floats, for the x and y of the position of the pupil normalized to the sensor area where
+            (0, 0): is the top left of sensor area, from the sensor's perspective
+            (1, 1): is the bottom right of sensor area, from the sensor's perspective
+            In systems where multiple cameras observe both eyes, this signal gives the pupil position in the primary sensor.
+            Useful for detecting and visualizing how well the eyes are centered in the sensor images.
+            
+        -   *position_guide_validity*
+            **TOBII_VALIDITY_INVALID** if *position_guide_xy* is not valid for this frame,
+            **TOBII_VALIDITY_VALID** if it is.
+
+        -   *position_guide_xy*
+            An array of two floats, for the x and y normalized positions per eye.
+            The position should be compensated with the offset between lens and camera optical axis.
+            0.5: is the optimal position
+            0.3-0.7: is when the position is ok and all gaze use cases are supported (green eyes in the position guide app)
+            0-0.3 and 0.7-1: is when the system might still output gaze but performance is degraded (yellow eyes)
+            <0 and >1: is when any gaze values are not reliable. No gaze use cases are supported (red eyes)
+
+        -   *blink_validity*
+            **TOBII_VALIDITY_INVALID** if *blink* for the eye is not valid for this frame, **TOBII_VALIDITY_VALID**
+            if it is.
+
+        -   *blink*
+            A bool that represents if the user's eye is open, TOBII_STATE_BOOL_FALSE means the eye is open and TOBII_STATE_BOOL_TRUE the eye is closed.
+
+
+
+    -   *right*
+        This is another instance of the same struct as in *left*, but which holds data related to the right eye of the user.
+
+    -   *gaze_origin_combined_validity*
+        **TOBII_VALIDITY_INVALID** if *gaze_origin_combined_mm_xyz* is not valid for this frame, **TOBII_VALIDITY_VALID** if it is.
+
+        This field will only be set if you have the capability TOBII_CAPABILITY_COMPOUND_STREAM_WEARABLE_3D_GAZE_COMBINED. See tobii_capability_supported().
+
+    -   *gaze_origin_combined_mm_xyz*
+        An array of three floats, for the x, y and z coordinate of the point in from which the combined gaze ray originates, expressed 
+        in a right-handed Cartesian coordinate system.
+
+        This field will only be set if you have the capability TOBII_CAPABILITY_COMPOUND_STREAM_WEARABLE_3D_GAZE_COMBINED. See tobii_capability_supported().
+
+    -   *gaze_direction_combined_validity*
+        **TOBII_VALIDITY_INVALID** if *gaze_direction_combined_normalized_xyz* is not valid for this frame, **TOBII_VALIDITY_VALID** if it is.
+
+        This field will only be set if you have the capability TOBII_CAPABILITY_COMPOUND_STREAM_WEARABLE_3D_GAZE_COMBINED. See tobii_capability_supported().
+
+    -   *gaze_direction_combined_normalized_xyz*
+        An array of three floats, for the x, y and z coordinate of the combined gaze direction of the left and right eye of the user, expressed
+        as a unit vector in a right-handed Cartesian coordinate system.
+
+        This field will only be set if you have the capability TOBII_CAPABILITY_COMPOUND_STREAM_WEARABLE_3D_GAZE_COMBINED. See tobii_capability_supported().
 
     -   *convergence_distance_validity*
         **TOBII_VALIDITY_INVALID** if *convergence_distance_mm* is not valid for this frame, **TOBII_VALIDITY_VALID** if it is.
@@ -3672,8 +3868,8 @@ This function will be called when there is new data available. It is called with
 
 ### Return value
 
-If the operation is successful, tobii_wearable_data_subscribe() returns **TOBII_ERROR_NO_ERROR**. If the call
-fails, tobii_wearable_data_subscribe returns one of the following:
+If the operation is successful, tobii_wearable_advanced_data_subscribe() returns **TOBII_ERROR_NO_ERROR**. If the call
+fails, tobii_wearable_advanced_data_subscribe returns one of the following:
 
 -   **TOBII_ERROR_INVALID_PARAMETER**
 
@@ -3682,7 +3878,7 @@ fails, tobii_wearable_data_subscribe returns one of the following:
 -   **TOBII_ERROR_ALREADY_SUBSCRIBED**
 
     A subscription for wearable data were already made. There can only be one callback registered at a time.
-    To change to another callback, first call tobii_wearable_data_unsubscribe().
+    To change to another callback, first call tobii_wearable_advanced_data_unsubscribe().
 
 -   **TOBII_ERROR_NOT_SUPPORTED**
 
@@ -3703,11 +3899,11 @@ fails, tobii_wearable_data_subscribe returns one of the following:
     The function failed because it was called from within a callback triggered from an API call such as 
     tobii_device_process_callbacks(), tobii_calibration_retrieve(), tobii_enumerate_illumination_modes(), 
     or tobii_license_key_retrieve().
-    Calling tobii_wearable_data_subscribe from within a callback function is not supported.
+    Calling tobii_wearable_advanced_data_subscribe from within a callback function is not supported.
 
 ### See also
 
-tobii_wearable_data_unsubscribe(), tobii_device_process_callbacks(), tobii_capability_supported()
+tobii_wearable_advanced_data_unsubscribe(), tobii_device_process_callbacks(), tobii_capability_supported()
 
 
 ### Example
@@ -3718,8 +3914,7 @@ tobii_wearable_data_unsubscribe(), tobii_device_process_callbacks(), tobii_capab
     #include <assert.h>
     #include <string.h>
 
-    void wearable_callback( tobii_wearable_data_t const* wearable,
-        void* user_data )
+    void wearable_callback( tobii_wearable_advanced_data_t const* wearable, void* user_data )
     {
         if( wearable->left.gaze_direction_validity )
         {
@@ -3762,10 +3957,10 @@ tobii_wearable_data_unsubscribe(), tobii_device_process_callbacks(), tobii_capab
         assert( error == TOBII_ERROR_NO_ERROR && *url != '\0' );
 
         tobii_device_t* device;
-        error = tobii_device_create( api, url, &device );
+        error = tobii_device_create( api, url, TOBII_FIELD_OF_USE_INTERACTIVE, &device );
         assert( error == TOBII_ERROR_NO_ERROR );
 
-        error = tobii_wearable_data_subscribe( device, wearable_callback, 0 );
+        error = tobii_wearable_advanced_data_subscribe( device, wearable_callback, 0 );
         assert( error == TOBII_ERROR_NO_ERROR );
 
         int is_running = 1000; // in this sample, exit after some iterations
@@ -3778,7 +3973,7 @@ tobii_wearable_data_unsubscribe(), tobii_device_process_callbacks(), tobii_capab
             assert( error == TOBII_ERROR_NO_ERROR );
         }
 
-        error = tobii_wearable_data_unsubscribe( device );
+        error = tobii_wearable_advanced_data_unsubscribe( device );
         assert( error == TOBII_ERROR_NO_ERROR );
 
         error = tobii_device_destroy( device );
@@ -3792,18 +3987,18 @@ tobii_wearable_data_unsubscribe(), tobii_device_process_callbacks(), tobii_capab
 
 
 
-tobii_wearable_data_unsubscribe
+tobii_wearable_advanced_data_unsubscribe
 -------------------------------
 
 ### Function
 
-Stops listening to the wearable data stream that was subscribed to by a call to tobii_wearable_data_subscribe().
+Stops listening to the wearable data stream that was subscribed to by a call to tobii_wearable_advanced_data_subscribe().
 
 
 ### Syntax
 
     #include <tobii/tobii_wearable.h>
-    tobii_error_t TOBII_CALL tobii_wearable_data_unsubscribe( tobii_device_t* device );
+    tobii_error_t TOBII_CALL tobii_wearable_advanced_data_unsubscribe( tobii_device_t* device );
 
 
 ### Remarks
@@ -3814,8 +4009,8 @@ tobii_device_create_ex.
 
 ### Return value
 
-If the operation is successful, tobii_wearable_data_unsubscribe() returns **TOBII_ERROR_NO_ERROR**. If the call
-fails, tobii_wearable_data_unsubscribe returns one of the following:
+If the operation is successful, tobii_wearable_advanced_data_unsubscribe() returns **TOBII_ERROR_NO_ERROR**. If the call
+fails, tobii_wearable_advanced_data_unsubscribe returns one of the following:
 
 -   **TOBII_ERROR_INVALID_PARAMETER**
 
@@ -3823,8 +4018,8 @@ fails, tobii_wearable_data_unsubscribe returns one of the following:
 
 -   **TOBII_ERROR_NOT_SUBSCRIBED**
 
-    There was no subscription for wearable data. It is only valid to call tobii_wearable_data_unsubscribe()
-    after first successfully calling tobii_wearable_data_subscribe().
+    There was no subscription for wearable data. It is only valid to call tobii_wearable_advanced_data_unsubscribe()
+    after first successfully calling tobii_wearable_advanced_data_subscribe().
 
 -   **TOBII_ERROR_NOT_SUPPORTED**
 
@@ -3841,11 +4036,11 @@ fails, tobii_wearable_data_unsubscribe returns one of the following:
     The function failed because it was called from within a callback triggered from an API call such as 
     tobii_device_process_callbacks(), tobii_calibration_retrieve(), tobii_enumerate_illumination_modes(), 
     or tobii_license_key_retrieve().
-    Calling tobii_wearable_data_unsubscribe from within a callback function is not supported.
+    Calling tobii_wearable_advanced_data_unsubscribe from within a callback function is not supported.
 
 ### See also
 
-tobii_wearable_data_subscribe()
+tobii_wearable_advanced_data_subscribe()
 
 
 
@@ -3940,7 +4135,7 @@ tobii_set_lens_configuration()
         assert( error == TOBII_ERROR_NO_ERROR && *url != '\0' );
 
         tobii_device_t* device;
-        error = tobii_device_create( api, url, &device );
+        error = tobii_device_create( api, url, TOBII_FIELD_OF_USE_INTERACTIVE, &device );
         assert( error == TOBII_ERROR_NO_ERROR );
 
         tobii_lens_configuration_t lens_config;
@@ -4064,7 +4259,7 @@ tobii_get_lens_configuration()
         assert( error == TOBII_ERROR_NO_ERROR && *url != '\0' );
 
         tobii_device_t* device;
-        error = tobii_device_create( api, url, &device );
+        error = tobii_device_create( api, url, TOBII_FIELD_OF_USE_INTERACTIVE, &device );
         assert( error == TOBII_ERROR_NO_ERROR );
 
         tobii_lens_configuration_writable_t writable;
@@ -4164,7 +4359,7 @@ tobii_wearable_foveated_gaze_subscribe
 
 ### Function
 
-Start listening for wearable foveated gaze stream;
+Start listening for wearable foveated gaze stream.
 
 ### Syntax
 
@@ -4185,13 +4380,11 @@ void tobii_wearable_foveated_gaze_callback( tobii_wearable_foveated_gaze_t const
 
 This function will be called when there is a new wearable foveated gaze data available. It is called with the following parameters:
 
-
--   **(BETA)** *timestamp_tracker_us* value when the Image was captured in microseconds (us). It is generated on the
-device responsible for capturing the data. The epoch is undefined, so these timestamps are only useful for
-calculating the time elapsed between a pair of values.
-
--   *timestamp_system_us* value when the gaze data was processed in client side in microseconds (us). This field is under discussion
-if it should be removed or not.
+-   *timestamp_us*
+    Timestamp value for when the gaze point was captured, measured in microseconds (us). The epoch is undefined,
+    so these timestamps are only useful for calculating the time elapsed between a pair of values. The function
+    tobii_system_clock() can be used to retrieve a timestamp using the same clock and same relative values as this
+    timestamp.
 
 -   *tracking_state* should be one of the following values:
 
@@ -4200,10 +4393,6 @@ if it should be removed or not.
     -   **TOBII_WEARABLE_FOVEATED_TRACKING_STATE_EXTRAPOLATED**
 
     -   **TOBII_WEARABLE_FOVEATED_TRACKING_STATE_LAST_KNOWN**
-
--   **(BETA)** *float gaze_direction_left_normalized_xyz* left eye gaze direction 3d vector normalized.
-
--   **(BETA)** *float gaze_direction_right_normalized_xyz* right eye gaze direction 3d vector normalized.
 
 -   *float gaze_direction_combined_normalized_xyz* is combined eye gaze direction 3d vector normalized.
 
@@ -4257,7 +4446,7 @@ tobii_wearable_foveated_gaze_unsubscribe(), tobii_device_process_callbacks()
                                           void* user_data )
     {
         (void)user_data;
-        printf( "Wearable foveated gaze %" PRIu64 " ", data->timestamp_tracker_us );
+        printf( "Wearable foveated gaze %" PRIu64 " ", data->timestamp_us );
 
         printf( "Combined gaze: (%2f,%2f,%2f)", data->gaze_direction_combined_normalized_xyz[0],
                  data->gaze_direction_combined_normalized_xyz[1], data->gaze_direction_combined_normalized_xyz[2] );
@@ -4271,7 +4460,7 @@ tobii_wearable_foveated_gaze_unsubscribe(), tobii_device_process_callbacks()
         tobii_error_t error = tobii_api_create( &api, NULL, NULL );
         assert( error == TOBII_ERROR_NO_ERROR );
         tobii_device_t* device;
-        error = tobii_device_create( api, NULL, &device );
+        error = tobii_device_create( api, NULL, TOBII_FIELD_OF_USE_INTERACTIVE, &device );
         assert( error == TOBII_ERROR_NO_ERROR );
 
         error = tobii_wearable_foveated_gaze_subscribe( device, wearable_foveated_gaze_callback, 0 );
@@ -4382,8 +4571,8 @@ Creates a device instance to be used for communicating with a specific device wi
 ### Syntax
 
     #include <tobii/tobii.h>
-    TOBII_API tobii_error_t TOBII_CALL tobii_device_create_ex( tobii_api_t* api, char const* url, tobii_license_key_t const* license_keys,
-        int license_count, tobii_license_validation_result_t* license_results, tobii_device_t** device );
+    TOBII_API tobii_error_t TOBII_CALL tobii_device_create_ex( tobii_api_t* api, char const* url, tobii_field_of_use_t field_of_use,
+        tobii_license_key_t const* license_keys, int license_count, tobii_license_validation_result_t* license_results, tobii_device_t** device );
 
 
 ### Remarks
@@ -4392,6 +4581,9 @@ In order to communicate with a specific device, stream engine needs to keep trac
 tobii_device_create_ex allocates and initializes this state, and is needed for all functions which communicates with a
 device. Creating a device will establish a connection to the tracker, and can be used to query the device for more
 information.
+
+User of the stream engine API needs to make a conscious decision regarding the intended field of use for the device by
+choosing between interactive or analytical use.
 
 tobii_license_key_t is a basic structure that contains the license key and its size in bytes.
 
@@ -4406,6 +4598,19 @@ Licenses are provided by Tobii AB.
 *api* must be a pointer to a valid tobii_api_t as created by calling tobii_api_create.
 
 *url* must be a valid device url as returned by tobii_enumerate_local_device_urls.
+
+*field_of_use* is one of the enum values in tobii_field_of_use_t:
+
+-   **TOBII_FIELD_OF_USE_INTERACTIVE**
+
+Device will be created for interactive use. No special license is required for this type use. Eye tracking data is only
+used as a user input for interaction experiences and cannot be stored, transmitted, nor analyzed or processed for other
+purposes.
+
+-   **TOBII_FIELD_OF_USE_ANALYTICAL**
+
+Device will be created for analytical use. This requires a special license from Tobii. Eye tracking data is used to analyze
+user attention, behavior or decisions in applications that store, transfer, record or analyze the data.
 
 *license_keys* should be provided. It is an array of valid license keys provided by Tobii. At least one license must be
 provided. Some API functions requires a different license than the basic consumer license:
@@ -4438,7 +4643,7 @@ tobii_set_device_name()
 -    **Additional Features**
 tobii_image_subscribe()
 
-*count* must be provided. It is the number of license keys has provided.
+*count* must be greater than zero. It is the number of license keys has provided.
 
 *device* must be a pointer to a variable of the type `tobii_device_t*` that is, a pointer to a tobii_device_t-pointer.
 This variable will be filled in with a pointer to the created device. tobii_device_t is an opaque type, and only its
@@ -4452,8 +4657,8 @@ tobii_device_create returns one of the following:
 
 -   **TOBII_ERROR_INVALID_PARAMETER**
 
-    The *api*, *url*, *device* or *license_keys* parameters were passed in as NULL, or the *count* parameter was not
-    non-zero.
+    The *api*, *url*, *device* or *license_keys* parameters were passed in as NULL, *tobii_field_of_use_t* value is not
+    a valid value from tobii_field_of_use_t enum or the *count* parameter is less or equal to zero.
 
 -   **TOBII_ERROR_ALLOCATION_FAILED**
 
@@ -4462,6 +4667,10 @@ tobii_device_create returns one of the following:
 -   **TOBII_ERROR_CONNECTION_FAILED**
 
     The connection to the device was lost. Call tobii_device_reconnect() to re-establish connection.
+
+-   **TOBII_ERROR_FIRMWARE_UPGRADE_IN_PROGRESS**
+
+    The firmware is currently in the process of being upgraded, try again in a little while.
 
 -   **TOBII_ERROR_INTERNAL**
 
@@ -4477,44 +4686,44 @@ tobii_device_create returns one of the following:
 
 ### License Errors
 
--   TOBII_LICENSE_VALIDATION_RESULT_OK
+-   **TOBII_LICENSE_VALIDATION_RESULT_OK**
 
 The license that has been provided is valid.
 
--   TOBII_LICENSE_VALIDATION_RESULT_TAMPERED
+-   **TOBII_LICENSE_VALIDATION_RESULT_TAMPERED**
 
 The license file has been tampered.
 
--   TOBII_LICENSE_VALIDATION_RESULT_INVALID_APPLICATION_SIGNATURE
+-   **TOBII_LICENSE_VALIDATION_RESULT_INVALID_APPLICATION_SIGNATURE**
 
 The signature of the application that runs the stream engine is not same with the signature in the license file.
 
--   TOBII_LICENSE_VALIDATION_RESULT_NONSIGNED_APPLICATION
+-   **TOBII_LICENSE_VALIDATION_RESULT_NONSIGNED_APPLICATION**
 
 The application that runs the stream engine has not been signed.
 
--   TOBII_LICENSE_VALIDATION_RESULT_EXPIRED
+-   **TOBII_LICENSE_VALIDATION_RESULT_EXPIRED**
 
 The validity of the license has been expired.
 
--   TOBII_LICENSE_VALIDATION_RESULT_PREMATURE
+-   **TOBII_LICENSE_VALIDATION_RESULT_PREMATURE**
 
 The license is not valid yet.
 
--   TOBII_LICENSE_VALIDATION_RESULT_INVALID_PROCESS_NAME
+-   **TOBII_LICENSE_VALIDATION_RESULT_INVALID_PROCESS_NAME**
 
 The process name of the application that runs the stream engine is not included to the list of process names in the
 license file.
 
--   TOBII_LICENSE_VALIDATION_RESULT_INVALID_SERIAL_NUMBER
+-   **TOBII_LICENSE_VALIDATION_RESULT_INVALID_SERIAL_NUMBER**
 
 The serial number of the current eye tracker is not included to the list of serial numbers in the license file.
 
--   TOBII_LICENSE_VALIDATION_RESULT_INVALID_MODEL
+-   **TOBII_LICENSE_VALIDATION_RESULT_INVALID_MODEL**
 
 The model name of the current eye tracker is not included to the list of model names in the license file.
 
--   TOBII_LICENSE_VALIDATION_RESULT_INVALID_PLATFORM_TYPE
+-   **TOBII_LICENSE_VALIDATION_RESULT_INVALID_PLATFORM_TYPE**
 
 The platform type of the current eye tracker is not included to the list of platform types in the license file.
 
@@ -4593,7 +4802,7 @@ tobii_get_feature_group() tobii_device_create()
         assert( error == TOBII_ERROR_NO_ERROR && *url != '\0' );
 
         tobii_device_t* device;
-        error = tobii_device_create_ex( api, url, &license, 1, &validation_result, &device );
+        error = tobii_device_create_ex( api, url, TOBII_FIELD_OF_USE_INTERACTIVE, &license, 1, &validation_result, &device );
         free( license_key );
         assert( error == TOBII_ERROR_NO_ERROR );
 
@@ -4765,7 +4974,7 @@ tobii_license_key_retrieve(), tobii_device_create()
         assert( error == TOBII_ERROR_NO_ERROR && *url != '\0' );
 
         tobii_device_t* device;
-        error = tobii_device_create_ex( api, url, &license, 1, &validation_result, &device );
+        error = tobii_device_create_ex( api, url, TOBII_FIELD_OF_USE_INTERACTIVE, &license, 1, &validation_result, &device );
         if ( error != TOBII_ERROR_NO_ERROR ) free( license_key );
         assert( error == TOBII_ERROR_NO_ERROR );
 
@@ -4965,7 +5174,7 @@ tobii_license_key_retrieve(), tobii_device_create()
         assert( error == TOBII_ERROR_NO_ERROR && *url != '\0' );
 
         tobii_device_t* device;
-        error = tobii_device_create_ex( api, url, &license, 1, &validation_result, &device );
+        error = tobii_device_create_ex( api, url, TOBII_FIELD_OF_USE_INTERACTIVE, &license, 1, &validation_result, &device );
         if ( error != TOBII_ERROR_NO_ERROR ) free( license_key );
         assert( error == TOBII_ERROR_NO_ERROR );
 
@@ -5106,7 +5315,7 @@ tobii_device_create()
         assert( error == TOBII_ERROR_NO_ERROR && *url != '\0' );
 
         tobii_device_t* device;
-        error = tobii_device_create( api, url, &device );
+        error = tobii_device_create( api, url, TOBII_FIELD_OF_USE_INTERACTIVE, &device );
         assert( error == TOBII_ERROR_NO_ERROR );
 
         tobii_feature_group_t feature_group;
@@ -7299,7 +7508,7 @@ tobii_gaze_data_subscribe()
         char url[ 256 ] = { 0 };
         printf( "Enter url to the eye tracker (don't forget prefix tobii-ttp:// or tet-tcp://):\n" );
         scanf( "%255s", url );
-        error = tobii_device_create( api, url, &device );      // if not using a pro tracker use tobii_device_create_ex with Professional license
+        error = tobii_device_create( api, url, TOBII_FIELD_OF_USE_INTERACTIVE, &device );      // if not using a pro tracker use tobii_device_create_ex with Professional license
         assert( error == TOBII_ERROR_NO_ERROR );
 
         error = tobii_gaze_data_subscribe( device, tobii_gaze_data_callback, 0 );
@@ -7500,7 +7709,7 @@ tobii_digital_syncport_subscribe()
         char url[ 256 ] = { 0 };
         printf( "Enter url to the eye tracker (don't forget prefix tobii-ttp:// or tet-tcp://):\n" );
         scanf( "%255s", url );
-        error = tobii_device_create( api, url, &device );      // if not using a pro tracker use tobii_device_create_ex with Professional license
+        error = tobii_device_create( api, url, TOBII_FIELD_OF_USE_INTERACTIVE, &device );      // if not using a pro tracker use tobii_device_create_ex with Professional license
         assert( error == TOBII_ERROR_NO_ERROR );
 
         error = tobii_digital_syncport_subscribe( device, tobii_digital_syncport_callback, 0 );
@@ -7738,3 +7947,6 @@ tobii_get_face_type returns one of the following:
 ### See also
 
 tobii_set_face_type() and tobii_enumerate_face_types()
+
+
+

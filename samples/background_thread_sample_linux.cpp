@@ -122,7 +122,7 @@ int background_thread_sample_main( void )
     std::cout << "Connecting to " << selected_device << "." << std::endl;
 
     tobii_device_t* device;
-    error = tobii_device_create( api, selected_device.c_str(), &device );
+    error = tobii_device_create( api, selected_device.c_str(), TOBII_FIELD_OF_USE_INTERACTIVE, &device );
     if( error != TOBII_ERROR_NO_ERROR )
     {
         std::cerr << "Failed to initialize the device with url " << selected_device << "." << std::endl;

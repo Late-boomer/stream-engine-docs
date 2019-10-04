@@ -12,10 +12,10 @@
 #include <chrono>
 #include <thread>
 
-static void wearable_callback( tobii_wearable_data_t const* wearable_data, void* user_data )
+static void wearable_callback( tobii_wearable_consumer_data_t const* wearable_data, void* user_data )
 {
     // Store the latest wearable data in the supplied storage
-    tobii_wearable_data_t* wearable_data_storage = (tobii_wearable_data_t*) user_data;
+    tobii_wearable_consumer_data_t* wearable_data_storage = (tobii_wearable_consumer_data_t*) user_data;
     *wearable_data_storage = *wearable_data;
 }
 
@@ -141,7 +141,7 @@ extern "C" int wearable_game_loop_sample_main( void )
     printf( "Connecting to %s.\n", selected_device );
 
     tobii_device_t* device;
-    error = tobii_device_create( api, selected_device, &device );
+    error = tobii_device_create( api, selected_device, TOBII_FIELD_OF_USE_INTERACTIVE, &device );
     free_device_list( &devices );
     if( error != TOBII_ERROR_NO_ERROR )
     {
@@ -150,15 +150,13 @@ extern "C" int wearable_game_loop_sample_main( void )
         return 1;
     }
 
-    tobii_wearable_data_t latest_wearable_data;
-    latest_wearable_data.timestamp_tracker_us = 0LL;
-    latest_wearable_data.timestamp_system_us = 0LL;
-    latest_wearable_data.frame_counter = 0;
-    latest_wearable_data.left.gaze_direction_validity = TOBII_VALIDITY_INVALID;
-    latest_wearable_data.right.gaze_direction_validity = TOBII_VALIDITY_INVALID;
+    tobii_wearable_consumer_data_t latest_wearable_data;
+    latest_wearable_data.timestamp_us = 0LL;
+    latest_wearable_data.gaze_direction_combined_validity = TOBII_VALIDITY_INVALID;
+    latest_wearable_data.gaze_origin_combined_validity = TOBII_VALIDITY_INVALID;
     // Start subscribing to wearable data, in this sample we supply a tobii_wearable_data_t variable to store
     // latest value.
-    error = tobii_wearable_data_subscribe( device, wearable_callback, &latest_wearable_data );
+    error = tobii_wearable_consumer_data_subscribe( device, wearable_callback, &latest_wearable_data );
     if( error != TOBII_ERROR_NO_ERROR )
     {
         fprintf( stderr, "Failed to subscribe to gaze stream.\n" );
@@ -172,36 +170,25 @@ extern "C" int wearable_game_loop_sample_main( void )
     thread_context_t* thread_context = timesync_thread_create( device );
 
     auto run_game_loop = []( void* context ) {
-        auto wearable_data = static_cast<tobii_wearable_data_t*>( context );
+        auto wearable_data = static_cast<tobii_wearable_consumer_data_t*>( context );
         // Perform work i.e game loop code here - let's emulate it with a sleep
         std::this_thread::sleep_for( std::chrono::milliseconds( 10 ) );
         // Use the gaze point data
-        printf( "Gaze Direction: T %" PRIu64, wearable_data->timestamp_tracker_us );
-        if( wearable_data->left.gaze_direction_validity == TOBII_VALIDITY_VALID )
+        printf( "Gaze Direction: T %" PRIu64, wearable_data->timestamp_us );
+        if( wearable_data->gaze_direction_combined_validity == TOBII_VALIDITY_VALID )
         {
-            printf( "\tLeft {x:% 2.2f, y:% 2.2f, z:% 2.2f} ",
-                wearable_data->left.gaze_direction_normalized_xyz[ 0 ],
-                wearable_data->left.gaze_direction_normalized_xyz[ 1 ],
-                wearable_data->left.gaze_direction_normalized_xyz[ 2 ] );
+            printf( "\tCombined {x:% 2.2f, y:% 2.2f, z:% 2.2f} ",
+                wearable_data->gaze_direction_combined_normalized_xyz[ 0 ],
+                wearable_data->gaze_direction_combined_normalized_xyz[ 1 ],
+                wearable_data->gaze_direction_combined_normalized_xyz[ 2 ] );
         }
         else
         {
-            printf( "\tLeft INVALID\t\t\t" );
-        }
-
-        if( wearable_data->right.gaze_direction_validity == TOBII_VALIDITY_VALID )
-        {
-            printf( "\tRight {x:% 2.2f, y:% 2.2f, z:% 2.2f}",
-                wearable_data->right.gaze_direction_normalized_xyz[ 0 ],
-                wearable_data->right.gaze_direction_normalized_xyz[ 1 ],
-                wearable_data->right.gaze_direction_normalized_xyz[ 2 ] );
-        }
-        else
-        {
-            printf( "\tRight INVALID\t\t\t" );
+            printf( "\tCombined INVALID\t\t\t" );
         }
 
         printf( "\n" );
+
         // Perform work which needs eye tracking data and the rest of the game loop
         std::this_thread::sleep_for( std::chrono::milliseconds( 6 ) );
     };
@@ -209,7 +196,7 @@ extern "C" int wearable_game_loop_sample_main( void )
     main_loop( device, run_game_loop, &latest_wearable_data );
     timesync_thread_destroy( thread_context );
 
-    error = tobii_wearable_data_unsubscribe( device );
+    error = tobii_wearable_consumer_data_unsubscribe( device );
     if( error != TOBII_ERROR_NO_ERROR )
         fprintf( stderr, "Failed to unsubscribe from wearable data stream.\n" );
 

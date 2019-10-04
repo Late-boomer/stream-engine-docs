@@ -206,7 +206,7 @@ int game_loop_sample_main( void )
     printf( "Connecting to %s.\n", selected_device );
 
     tobii_device_t* device;
-    error = tobii_device_create( api, selected_device, &device );
+    error = tobii_device_create( api, selected_device, TOBII_FIELD_OF_USE_INTERACTIVE, &device );
     free_device_list( &devices );
     if( error != TOBII_ERROR_NO_ERROR )
     {
