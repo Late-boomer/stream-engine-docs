@@ -1,6 +1,5 @@
----
-title: Tobii Stream Engine API 4.1.0 - Reference Documentation
----
+Tobii Stream Engine API 4.1.0 - Reference Documentation
+====
 
 Tobii Eye Trackers generate eye tracking data streams (including user presence, headpose, etc) through the Tobii Stream Engine.
 Core functions and basic data streams are openly available through the Tobii Stream Engine API.
