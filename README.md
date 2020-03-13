@@ -1,4 +1,4 @@
-# Welcome to Tobii Stream Engine samples and documentation
+# Tobii Stream Engine samples and documentation
 
   This repository contains samples and documentation to show developers how to
   use our API to build interactive _eye tracking_ enabled games and applications.
